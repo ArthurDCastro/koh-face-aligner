@@ -1,36 +1,39 @@
 from pathlib import Path
+
 import cv2
 
-PASTA_MODELOS = Path(__file__).resolve().parent.parent / "models"
+MODEL_PATH = Path(__file__).resolve().parent.parent / "models"
 
 
 class DetectorYuNet:
-    """Detector facial YuNet baseado em rede convolucional."""
+    """YuNet face detector based on a convolutional neural network."""
 
-    nome = "YuNet (deep learning)"
+    name = "YuNet (deep learning)"
 
-    def __init__(self, limiar_confianca=0.7):
-        modelo = PASTA_MODELOS / "face_detection_yunet_2023mar.onnx"
+    def __init__(self, confidence_threshold=0.7):
+        model_file = MODEL_PATH / "face_detection_yunet_2023mar.onnx"
 
-        self.rede = cv2.FaceDetectorYN.create(
-            str(modelo),
+        self.network = cv2.FaceDetectorYN.create(
+            str(model_file),
             "",
             (320, 320),
-            score_threshold=limiar_confianca,
+            score_threshold=confidence_threshold,
             nms_threshold=0.3,
             top_k=5000,
         )
 
-    def detectar(self, imagem):
-        altura, largura = imagem.shape[:2]
-        self.rede.setInputSize((largura, altura))
+    def detect(self, image):
+        height, width = image.shape[:2]
+        self.network.setInputSize((width, height))
 
-        _, faces = self.rede.detect(imagem)
+        _, faces = self.network.detect(image)
 
         if faces is None:
             return []
 
         return [
-            tuple(float(v) for v in face[:4])
+            tuple(float(value) for value in face[:4])
             for face in faces
         ]
+
+    detectar = detect
