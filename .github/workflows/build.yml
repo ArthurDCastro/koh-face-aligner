@@ -1,0 +1,96 @@
+name: Build KOH
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build ${{ matrix.platform }}
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            platform: linux
+            artifact: KOH-linux-x64
+
+          - os: windows-2022
+            platform: windows
+            artifact: KOH-windows-x64
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          architecture: x64
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+
+      - name: Verify ONNX models
+        shell: bash
+        run: |
+          test -f models/face_detection_yunet_2023mar.onnx
+          test -f models/modnet/modnet_photographic.onnx
+
+      - name: Build application
+        run: python scripts/build.py
+
+      - name: Verify Linux executable
+        if: matrix.platform == 'linux'
+        shell: bash
+        run: test -f dist/KOH/KOH
+
+      - name: Verify Windows executable
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        run: |
+          if (!(Test-Path "dist/KOH/KOH.exe")) {
+            throw "KOH.exe not found"
+          }
+
+      - name: Package Linux
+        if: matrix.platform == 'linux'
+        shell: bash
+        run: |
+          cd dist
+          tar -czf KOH-linux-x64.tar.gz KOH
+
+      - name: Package Windows
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        run: |
+          Compress-Archive `
+            -Path dist/KOH `
+            -DestinationPath dist/KOH-windows-x64.zip
+
+      - name: Upload Linux artifact
+        if: matrix.platform == 'linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: KOH-linux-x64
+          path: dist/KOH-linux-x64.tar.gz
+          if-no-files-found: error
+
+      - name: Upload Windows artifact
+        if: matrix.platform == 'windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: KOH-windows-x64
+          path: dist/KOH-windows-x64.zip
+          if-no-files-found: error
