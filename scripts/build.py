@@ -35,13 +35,13 @@ def main():
         "--onedir",
         "--windowed",
         "--clean",
+        "--hidden-import=src.worker",
         "--noconfirm",
         "--paths", str(PROJECT_ROOT),
         "--distpath", str(PROJECT_ROOT / "dist"),
         "--workpath", str(PROJECT_ROOT / "build"),
         "--specpath", str(PROJECT_ROOT),
         "--add-data",
-        "--hidden-import=src.worker",
         f"{MODELS_DIR}{os.pathsep}models",
     ]
 
