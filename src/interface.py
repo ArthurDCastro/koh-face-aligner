@@ -126,15 +126,15 @@ class MainWindow(QWidget):
 
         self.width_input = QSpinBox()
         self.width_input.setRange(1, 10000)
-        self.width_input.setValue(600)
+        self.width_input.setValue(400)
 
         self.height_input = QSpinBox()
         self.height_input.setRange(1, 10000)
-        self.height_input.setValue(800)
+        self.height_input.setValue(400)
 
         self.face_ratio_input = QDoubleSpinBox()
         self.face_ratio_input.setRange(1, 100)
-        self.face_ratio_input.setValue(40)
+        self.face_ratio_input.setValue(35)
         self.face_ratio_input.setSuffix(" %")
 
         self.position_x_input = QDoubleSpinBox()

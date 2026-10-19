@@ -96,8 +96,8 @@ class ImageProcessor:
 
                 if face is None:
                     raise ValueError("No faces detected.")
-
-                # Apply face alignment and cropping
+ 
+                # Center and resize the image
                 result = self.centralizer.center(
                     image=image,
                     face=face,
@@ -108,27 +108,21 @@ class ImageProcessor:
                     position_y=position_y,
                 )
 
-                # Apply background removal after centering
+                # Apply optional background removal
                 if remover is not None:
                     result = remover.remove_background(result)
                     extension = ".png"
                 else:
                     extension = ".jpg"
 
-
+                # Save only the final image
                 output_path = output_dir / f"koh_{file.stem}{extension}"
 
                 if not cv2.imwrite(str(output_path), result):
-                    raise IOError("Failed to save image.")
-
-
-                # Generate output filename
-                output_path = output_dir / f"koh_{file.stem}.jpg"
-
-                if not cv2.imwrite(str(output_path), result):
-                    raise IOError("Failed to save image.")
+                    raise IOError("Failed to save output image.")
 
                 results["success"] += 1
+
 
             except Exception as error:
                 results["errors"].append({

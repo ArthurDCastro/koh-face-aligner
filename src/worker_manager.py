@@ -81,10 +81,21 @@ class WorkerManager:
             report_path = Path(temporary_dir) / "report.json"
             log_path = Path(temporary_dir) / "worker.log"
 
-            command = [
-                sys.executable,
-                "-m",
-                "src.worker",
+            
+            # Use the bundled executable when running with PyInstaller
+            if getattr(sys, "frozen", False):
+                command = [
+                    sys.executable,
+                    "--koh-worker",
+                ]
+            else:
+                command = [
+                    sys.executable,
+                    "-m",
+                    "src.worker",
+                ]
+
+            command.extend([
                 "--input", str(file.resolve()),
                 "--output", str(output_dir.resolve()),
                 "--report", str(report_path),
@@ -94,7 +105,8 @@ class WorkerManager:
                 "--position-x", str(settings["position_x"]),
                 "--position-y", str(settings["position_y"]),
                 "--background-mode", settings["background_mode"],
-            ]
+            ])
+
 
             creationflags = (
                 subprocess.CREATE_NO_WINDOW

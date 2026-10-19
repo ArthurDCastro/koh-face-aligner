@@ -6,7 +6,7 @@ import numpy as np
 # Each key stores a numeric control used by the GrabCut mask generation.
 CONTROL_VALUES = {
     # Initial face and positioning defaults.
-    "face_ratio": 0.40,  # Estimated face width as a fraction of the image width.
+    "face_ratio": 0.35,  # Estimated face width as a fraction of the image width.
     "position_x": 0.50,  # Horizontal center point of the face.
     "position_y": 0.40,  # Vertical center point of the face.
 

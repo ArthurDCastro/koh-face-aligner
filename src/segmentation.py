@@ -4,15 +4,16 @@ from pathlib import Path
 import cv2
 import numpy as np
 import onnxruntime as ort
+from src.paths import get_resource_path
+
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
-MODEL_PATH = (
-    PROJECT_ROOT
-    / "models"
-    / "modnet"
-    / "modnet_photographic.onnx"
+MODEL_PATH = get_resource_path(
+    "models",
+    "modnet",
+    "modnet_photographic.onnx",
 )
 
 

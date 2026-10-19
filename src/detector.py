@@ -1,47 +1,26 @@
 from pathlib import Path
 
+import sys
+
 import cv2
 
 import time
 import cv2
+from src.paths import get_resource_path
 
 MAX_DETECTION_SIZE = 1280
 
-MODEL_PATH = Path(__file__).resolve().parent.parent / "models"
+MODEL_PATH = get_resource_path("models")
 
+def get_resource_path(*parts):
+    """Resolve bundled resources in source and frozen modes."""
+    if getattr(sys, "frozen", False):
+        base_path = Path(sys._MEIPASS)
+    else:
+        base_path = Path(__file__).resolve().parent.parent
 
-class DetectorYuNet:
-    """YuNet face detector based on a convolutional neural network."""
+    return base_path.joinpath(*parts)
 
-    name = "YuNet (deep learning)"
-
-    def __init__(self, confidence_threshold=0.7):
-        model_file = MODEL_PATH / "face_detection_yunet_2023mar.onnx"
-
-        self.network = cv2.FaceDetectorYN.create(
-            str(model_file),
-            "",
-            (320, 320),
-            score_threshold=confidence_threshold,
-            nms_threshold=0.3,
-            top_k=5000,
-        )
-
-    def detect(self, image):
-        height, width = image.shape[:2]
-        self.network.setInputSize((width, height))
-
-        _, faces = self.network.detect(image)
-
-        if faces is None:
-            return []
-
-        return [
-            tuple(float(value) for value in face[:4])
-            for face in faces
-        ]
-
-    detectar = detect
 
 def detect_largest_face(detector, image):
     """
@@ -100,3 +79,37 @@ def detect_largest_face(detector, image):
     )
 
     return largest_face, elapsed_ms
+
+
+class DetectorYuNet:
+    """YuNet face detector based on a convolutional neural network."""
+
+    name = "YuNet (deep learning)"
+
+    def __init__(self, confidence_threshold=0.7):
+        model_file = MODEL_PATH / "face_detection_yunet_2023mar.onnx"
+
+        self.network = cv2.FaceDetectorYN.create(
+            str(model_file),
+            "",
+            (320, 320),
+            score_threshold=confidence_threshold,
+            nms_threshold=0.3,
+            top_k=5000,
+        )
+
+    def detect(self, image):
+        height, width = image.shape[:2]
+        self.network.setInputSize((width, height))
+
+        _, faces = self.network.detect(image)
+
+        if faces is None:
+            return []
+
+        return [
+            tuple(float(value) for value in face[:4])
+            for face in faces
+        ]
+
+    detectar = detect
