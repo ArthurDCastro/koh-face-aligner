@@ -9,3 +9,8 @@ dist/
 test_*
 tests/
 result*
+
+models/rembg/
+.venv/
+__pycache__/
+.pytest_cache/

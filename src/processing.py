@@ -3,14 +3,21 @@ from pathlib import Path
 
 import cv2
 
-from src.detector import DetectorYuNet
+from src.detector import DetectorYuNet, detect_largest_face
 from src.centralizer import Centralizer
+from src.background import WhiteBackgroundRemover
+from src.segmentation import AIBackgroundRemover
+from src.resource_manager import ResourceManager
 
 
 class ImageProcessor:
     def __init__(self):
         self.detector = DetectorYuNet()
         self.centralizer = Centralizer()
+        self.resources = ResourceManager(
+            max_memory_mb=2048,
+            max_megapixels=20,
+        )
 
     def process(
         self,
@@ -22,6 +29,7 @@ class ImageProcessor:
         position_x=0.5,
         position_y=0.5,
         callback=None,
+        background_mode="none",
     ):
         """
         Process a batch of images.
@@ -49,22 +57,45 @@ class ImageProcessor:
             "errors": [],
         }
 
+
+        if background_mode == "fast":
+            remover = WhiteBackgroundRemover(
+                face_ratio=face_ratio,
+                position_x=position_x,
+                position_y=position_y,
+            )
+        elif background_mode == "ai":
+            remover = AIBackgroundRemover()
+        elif background_mode == "none":
+            remover = None
+        else:
+            raise ValueError(
+                f"Unsupported background mode: {background_mode}"
+            )
+
+        self.resources.validate_output(width, height)
+
         for index, file in enumerate(files, start=1):
             file = Path(file)
 
             try:
+                # Validate image before loading
+                self.resources.validate_image(file)
+
+                # Load image
                 image = cv2.imread(str(file))
 
                 if image is None:
                     raise ValueError("Unable to load image.")
 
-                faces = self.detector.detectar(image)
+                # Detect largest face
+                face, detection_time = detect_largest_face(
+                    self.detector,
+                    image,
+                )
 
-                if not faces:
+                if face is None:
                     raise ValueError("No faces detected.")
-
-                # Select the largest detected face
-                face = max(faces, key=lambda f: f[2] * f[3])
 
                 # Apply face alignment and cropping
                 result = self.centralizer.center(
@@ -76,6 +107,20 @@ class ImageProcessor:
                     position_x=position_x,
                     position_y=position_y,
                 )
+
+                # Apply background removal after centering
+                if remover is not None:
+                    result = remover.remove_background(result)
+                    extension = ".png"
+                else:
+                    extension = ".jpg"
+
+
+                output_path = output_dir / f"koh_{file.stem}{extension}"
+
+                if not cv2.imwrite(str(output_path), result):
+                    raise IOError("Failed to save image.")
+
 
                 # Generate output filename
                 output_path = output_dir / f"koh_{file.stem}.jpg"

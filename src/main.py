@@ -1,5 +1,17 @@
+import sys
+
+from PySide6.QtWidgets import QApplication
+
+from src.interface import MainWindow
+
+
 def main():
-    print("KOH - Keypoint-Oriented Harmonization")
+    app = QApplication(sys.argv)
+
+    window = MainWindow()
+    window.show()
+
+    sys.exit(app.exec())
 
 
 if __name__ == "__main__":
