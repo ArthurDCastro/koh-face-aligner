@@ -67,7 +67,8 @@ def main():
             str(ICON_DIR / "koh.png"),
         ])
 
-        PyInstaller.__main__.run(arguments)
+    # Run PyInstaller on both platforms
+    PyInstaller.__main__.run(arguments)
 
 
 if __name__ == "__main__":
