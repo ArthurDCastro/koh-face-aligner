@@ -1,5 +1,7 @@
 # Tutorial do KOH - Como o aplicativo funciona
 
+**Idioma:** 🇺🇸 [English](koh-tutorial-en.md) · 🇧🇷 **Português** · 🇪🇸 [Español](koh-tutorial-es.md)
+
 Este tutorial explica, em linguagem clara, como o KOH funciona, quais parâmetros ele usa e como cada parte da interface influencia o resultado final.
 
 > Observação: o aplicativo foi pensado para padronizar retratos, detectando a face principal, centralizando-a e exportando uma imagem final em dimensões definidas.
