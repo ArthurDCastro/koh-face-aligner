@@ -1,63 +1,71 @@
 # KOH - Keypoint-Oriented Harmonization
 
-KOH é uma aplicação desktop multiplataforma para detecção automática de faces, alinhamento e padronização de imagens com foco em retratos. O projeto usa visão computacional para localizar a maior face da imagem, centralizá-la com base em proporções configuráveis e exportar o resultado em tamanhos padronizados. Também oferece remoção opcional de fundo por métodos rápidos ou baseados em IA.
+**Tutorial / Language:** 🇺🇸 **[English (default)](docs/tutorials/koh-tutorial-en.md)** · 🇧🇷 [Português](docs/tutorials/koh-tutorial-pt-BR.md) · 🇪🇸 [Español](docs/tutorials/koh-tutorial-es.md)
 
-## Visão geral
+KOH is a cross-platform desktop application for automatic face detection, alignment, and image standardization, focused on portraits. The project uses computer vision to locate the largest face in an image, center it according to configurable proportions, and export the result at standardized dimensions. It also offers optional background removal using fast processing or AI-based methods.
 
-O fluxo principal do projeto é:
+## Overview
 
-- detectar a face principal em uma imagem;
-- centralizar e redimensionar a região facial com base em parâmetros como largura, altura e proporção da face;
-- aplicar recorte e posicionamento para padronizar a composição;
-- salvar a imagem final em diretório de saída;
-- opcionalmente remover o fundo usando estratégias de processamento do projeto.
+The main workflow is to:
 
-A interface gráfica permite processar várias imagens em lote a partir de arquivos ou pastas inteiras.
+- detect the main face in an image;
+- center and resize the face based on parameters such as output width, height, and face ratio;
+- crop and position the subject to standardize the composition;
+- save the final image to an output directory;
+- optionally remove the background using the project's processing methods.
 
-## Funcionalidades
+The graphical interface supports batch processing of multiple files or entire folders.
 
-- Detecção de rostos com YuNet;
-- Seleção da maior face detectada;
-- Ajuste de proporção facial e posicionamento horizontal/vertical;
-- Processamento em lote de imagens;
-- Exportação em JPG ou PNG;
-- Remoção de fundo em modo `none`, `fast` e `ai`;
-- Suporte a Windows e Linux via Python e OpenCV.
+## Features
 
-## Estrutura do projeto
+- Face detection using YuNet;
+- Selection of the largest detected face;
+- Configurable face ratio and horizontal/vertical position;
+- Batch image processing;
+- JPG and PNG export;
+- Background removal modes: `none`, `fast`, and `ai`;
+- Windows and Linux support.
 
-- `src/main.py` — ponto de entrada da aplicação;
-- `src/interface.py` — interface gráfica em PySide6;
-- `src/processing.py` — pipeline principal de processamento;
-- `src/detector.py` — detecção de faces com YuNet;
-- `src/centralizer.py` — centralização e alinhamento facial;
-- `src/segmentation.py` — remoção de fundo com MODNet;
-- `src/background.py` — remoção rápida de fundo;
-- `models/` — pesos ONNX dos modelos usados;
-- `requirements.txt` — dependências do projeto.
+## User tutorial
 
-## Requisitos
+For a detailed walkthrough of the interface, image settings, processing modes, and export behavior, read the **[KOH Tutorial (English)](docs/tutorials/koh-tutorial-en.md)**.
 
-- Python 3.10+
-- Pip
-- Ambiente virtual recomendado
+Also available in [Português 🇧🇷](docs/tutorials/koh-tutorial-pt-BR.md) and [Español 🇪🇸](docs/tutorials/koh-tutorial-es.md).
 
-## Download dos executáveis
+## Project structure
 
-Os executáveis para **Windows** e **Linux (Ubuntu)** são gerados pelo GitHub Actions.
+- `src/main.py` — application entry point;
+- `src/interface.py` — PySide6 graphical interface;
+- `src/processing.py` — main processing pipeline;
+- `src/detector.py` — YuNet face detector;
+- `src/centralizer.py` — face centering and alignment;
+- `src/segmentation.py` — MODNet background removal;
+- `src/background.py` — fast background removal;
+- `models/` — ONNX model weights;
+- `requirements.txt` — project dependencies.
 
-**[Acessar os downloads do KOH (GitHub Actions)](https://github.com/ArthurDCastro/koh-face-aligner/actions/workflows/build.yml)**
+## Requirements
 
-1. Abra o link acima e selecione a execução **Build KOH** mais recente concluída com sucesso.
-2. Na seção **Artifacts**, baixe o pacote correspondente ao sistema:
-   - **Windows:** `KOH-windows-x64` — extraia o ZIP e execute `KOH.exe`.
-   - **Ubuntu (Linux):** `KOH-linux-x64` — extraia o pacote e execute `KOH/KOH` (se necessário, dê permissão com `chmod +x KOH/KOH`).
+- Python 3.10+;
+- pip;
+- A virtual environment is recommended.
 
-> Para baixar os artefatos, o GitHub pode exigir que você esteja conectado à sua conta. Os downloads aparecem apenas nas execuções que concluíram a etapa de publicação dos artefatos.
+## Download executables
 
-## Instalação
+Windows and Linux (Ubuntu) executables are built using GitHub Actions.
 
-Clone o projeto e instale as dependências:
+**[Download KOH builds (GitHub Actions)](https://github.com/ArthurDCastro/koh-face-aligner/actions/workflows/build.yml)**
+
+1. Open the link and select the most recent successful **Build KOH** workflow run.
+2. Under **Artifacts**, download the package for your platform:
+   - **Windows:** `KOH-windows-x64` — extract the ZIP and run `KOH.exe`.
+   - **Ubuntu (Linux):** `KOH-linux-x64` — extract the archive and run `KOH/KOH`. If necessary, run `chmod +x KOH/KOH`.
+
+> GitHub may require you to sign in to download workflow artifacts. Downloads appear only for runs that successfully uploaded the build artifacts.
+
+## Installation
+
+Clone the repository and install the dependencies:
 
 ```bash
 git clone https://github.com/ArthurDCastro/koh-face-aligner.git
@@ -68,37 +76,30 @@ pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
-Você também pode usar o script de instalação:
+You can also use the installation script:
 
 ```bash
 bash install.sh
 ```
 
-## Execução
+## Running the application
 
 ```bash
 source .venv/bin/activate
 python -m src.main
 ```
 
-A interface abrirá e permitirá:
+The interface lets you select images, choose an output folder, configure output dimensions and face positioning, select the background removal mode, and start batch processing.
 
-1. selecionar uma ou mais imagens;
-2. escolher uma pasta de saída;
-3. definir largura, altura, proporção facial e posição;
-4. escolher o tipo de remoção de fundo;
-5. iniciar o processamento em lote.
+## Models and credits
 
-## Modelos utilizados e créditos
+This project uses third-party AI models for face detection and background removal. The original research and implementations are credited below.
 
-Este projeto utiliza modelos de inteligência artificial para detecção facial e remoção de fundo. Abaixo os modelos e as referências originais.
+### 1) YuNet — face detection
 
-### 1) YuNet — detecção de faces
+YuNet is used to detect faces efficiently in images.
 
-O detector de faces do projeto usa o modelo YuNet para localizar rostos em tempo real e com baixa latência.
-
-- Artigo: Wu, W., Peng, H., Yu, S. "YuNet: A tiny millisecond-level face detector". Machine Intelligence Research, 2023.
-- Referência bibliográfica:
+- Paper: Wu, W., Peng, H., Yu, S. "YuNet: A tiny millisecond-level face detector". *Machine Intelligence Research*, 2023.
 
 ```bibtex
 @article{wu2023yunet,
@@ -113,14 +114,13 @@ O detector de faces do projeto usa o modelo YuNet para localizar rostos em tempo
 }
 ```
 
-O arquivo `models/face_detection_yunet_2023mar.onnx` corresponde a esse modelo de detecção facial usado pelo projeto.
+The model file is `models/face_detection_yunet_2023mar.onnx`.
 
-### 2) MODNet — remoção de fundo/alpha matting de retrato
+### 2) MODNet — portrait matting and background removal
 
-Para a remoção de fundo de retratos, o projeto usa o MODNet, um modelo de matting trimap-free focado em retratos.
+MODNet is a trimap-free portrait matting model used to estimate alpha masks and remove backgrounds.
 
-- Artigo: Ke, Z., Sun, J., Li, K., Yan, Q., Lau, R. W. H. "MODNet: Real-Time Trimap-Free Portrait Matting via Objective Decomposition". AAAI, 2022.
-- Referência bibliográfica:
+- Paper: Ke, Z., Sun, J., Li, K., Yan, Q., Lau, R. W. H. "MODNet: Real-Time Trimap-Free Portrait Matting via Objective Decomposition". *AAAI*, 2022.
 
 ```bibtex
 @InProceedings{MODNet,
@@ -131,13 +131,13 @@ Para a remoção de fundo de retratos, o projeto usa o MODNet, um modelo de matt
 }
 ```
 
-O arquivo `models/modnet/modnet_photographic.onnx` é o peso do modelo MODNet usado para gerar a máscara alfa do retrato e remover o fundo.
+The model file is `models/modnet/modnet_photographic.onnx`.
 
-### Créditos e uso
+### Attribution and redistribution
 
-Os modelos acima são utilizados neste projeto com atribuição aos autores originais. Recomendamos manter as referências acadêmicas em qualquer material derivado ou documentação pública do projeto. Se houver redistribuição dos pesos ONNX em outros contextos, verifique também os termos específicos das implementações originais e dos repositórios oficiais dos autores.
+The models above are credited to their original authors. Academic references do not replace the models' licenses or other third-party notices. Check the applicable terms before redistributing the model weights and bundled dependencies.
 
-## Tecnologias principais
+## Main technologies
 
 - Python
 - OpenCV / OpenCV Contrib
@@ -146,14 +146,14 @@ Os modelos acima são utilizados neste projeto com atribuição aos autores orig
 - ONNX Runtime
 - PyInstaller
 
-## Licença
+## License
 
-O código-fonte original do KOH é distribuído sob a [licença MIT](LICENSE), permitindo uso, modificação e distribuição, inclusive comercial, mediante preservação dos avisos de licença e direitos autorais.
+The original KOH source code is distributed under the [MIT License](LICENSE), allowing use, modification, and redistribution, including commercial use, while retaining the required copyright and license notices.
 
-Os modelos YuNet e MODNet, assim como as bibliotecas de terceiros, permanecem sujeitos às suas próprias licenças. Consulte as fontes e as condições de redistribuição desses componentes antes de distribuir pacotes do aplicativo.
+YuNet, MODNet, and bundled third-party libraries remain subject to their own licenses. Review their redistribution requirements when packaging the application.
 
-## Observações
+## Notes
 
-- O projeto foi desenvolvido para padronização de retratos e processamento em lote.
-- O modelo `ai` do programa está implementado com MODNet, enquanto a interface pode apresentar rótulos mais genéricos ou antigos em alguns pontos.
-- Para melhores resultados, use imagens com rosto bem visível e boa iluminação.
+- KOH is designed to standardize portraits and process images in batches.
+- The `ai` mode uses MODNet, although older or more generic labels may still appear in parts of the interface.
+- For best results, use images with clearly visible faces and good lighting.
