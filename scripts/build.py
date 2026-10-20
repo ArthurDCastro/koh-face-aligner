@@ -32,7 +32,7 @@ def main():
     arguments = [
         str(ENTRY_POINT),
         "--name", APP_NAME,
-        "--onedir",
+        "--onefile" if sys.platform == "win32" else "--onedir",
         "--windowed",
         "--clean",
         "--hidden-import=src.worker",

@@ -60,7 +60,7 @@ jobs:
         if: matrix.platform == 'windows'
         shell: pwsh
         run: |
-          if (!(Test-Path "dist/KOH/KOH.exe")) {
+          if (!(Test-Path "dist/KOH.exe")) {
             throw "KOH.exe not found"
           }
 
@@ -76,7 +76,7 @@ jobs:
         shell: pwsh
         run: |
           Compress-Archive `
-            -Path dist/KOH `
+            -Path dist/KOH.exe `
             -DestinationPath dist/KOH-windows-x64.zip
 
       - name: Upload Linux artifact
