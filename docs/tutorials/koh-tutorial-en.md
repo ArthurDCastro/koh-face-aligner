@@ -1,5 +1,7 @@
 # KOH Tutorial - How the app works
 
+**Language:** 🇺🇸 **English** · 🇧🇷 [Português](koh-tutorial-pt-BR.md) · 🇪🇸 [Español](koh-tutorial-es.md)
+
 This tutorial explains, in simple terms, how KOH works, which parameters it uses, and what each part of the interface does.
 
 > Note: the app is designed to standardize portraits by detecting the main face, centering it, and exporting a final image in specific dimensions.
