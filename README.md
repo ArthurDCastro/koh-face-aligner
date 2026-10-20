@@ -148,7 +148,9 @@ Os modelos acima são utilizados neste projeto com atribuição aos autores orig
 
 ## Licença
 
-Este repositório não inclui uma licença explícita no momento. Caso você tenha intenção de distribuir ou reutilizar o projeto comercialmente, verifique as condições dos modelos e bibliotecas utilizadas antes da publicação final.
+O código-fonte original do KOH é distribuído sob a [licença MIT](LICENSE), permitindo uso, modificação e distribuição, inclusive comercial, mediante preservação dos avisos de licença e direitos autorais.
+
+Os modelos YuNet e MODNet, assim como as bibliotecas de terceiros, permanecem sujeitos às suas próprias licenças. Consulte as fontes e as condições de redistribuição desses componentes antes de distribuir pacotes do aplicativo.
 
 ## Observações
 
