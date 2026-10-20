@@ -1,5 +1,7 @@
 # Tutorial de KOH - Cómo funciona la aplicación
 
+**Idioma:** 🇺🇸 [English](koh-tutorial-en.md) · 🇧🇷 [Português](koh-tutorial-pt-BR.md) · 🇪🇸 **Español**
+
 Este tutorial explica, de forma clara, cómo funciona KOH, qué parámetros usa y qué hace cada parte de la interfaz.
 
 > Nota: la aplicación está diseñada para estandarizar retratos detectando la cara principal, centrándola y exportando una imagen final con dimensiones definidas.
