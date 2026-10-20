@@ -42,6 +42,19 @@ A interface gráfica permite processar várias imagens em lote a partir de arqui
 - Pip
 - Ambiente virtual recomendado
 
+## Download dos executáveis
+
+Os executáveis para **Windows** e **Linux (Ubuntu)** são gerados pelo GitHub Actions.
+
+**[Acessar os downloads do KOH (GitHub Actions)](https://github.com/ArthurDCastro/koh-face-aligner/actions/workflows/build.yml)**
+
+1. Abra o link acima e selecione a execução **Build KOH** mais recente concluída com sucesso.
+2. Na seção **Artifacts**, baixe o pacote correspondente ao sistema:
+   - **Windows:** `KOH-windows-x64` — extraia o ZIP e execute `KOH.exe`.
+   - **Ubuntu (Linux):** `KOH-linux-x64` — extraia o pacote e execute `KOH/KOH` (se necessário, dê permissão com `chmod +x KOH/KOH`).
+
+> Para baixar os artefatos, o GitHub pode exigir que você esteja conectado à sua conta. Os downloads aparecem apenas nas execuções que concluíram a etapa de publicação dos artefatos.
+
 ## Instalação
 
 Clone o projeto e instale as dependências:
