@@ -11,6 +11,8 @@ APP_NAME = "KOH"
 ENTRY_POINT = PROJECT_ROOT / "src" / "main.py"
 MODELS_DIR = PROJECT_ROOT / "models"
 
+ICON_DIR = PROJECT_ROOT / "assets" / "icons"
+
 
 def main():
     if not MODELS_DIR.is_dir():
@@ -43,6 +45,8 @@ def main():
         "--specpath", str(PROJECT_ROOT),
         "--add-data",
         f"{MODELS_DIR}{os.pathsep}models",
+        "--add-data",
+        f"{ICON_DIR}{os.pathsep}assets/icons",
     ]
 
     if sys.platform == "linux":
@@ -52,7 +56,18 @@ def main():
     else:
         raise RuntimeError("Unsupported operating system.")
 
-    PyInstaller.__main__.run(arguments)
+    if sys.platform == "win32":
+        arguments.extend([
+            "--icon",
+            str(ICON_DIR / "koh.ico"),
+        ])
+    elif sys.platform == "linux":
+        arguments.extend([
+            "--icon",
+            str(ICON_DIR / "koh.png"),
+        ])
+
+        PyInstaller.__main__.run(arguments)
 
 
 if __name__ == "__main__":

@@ -13,10 +13,21 @@ def main():
 
     # Desktop application mode
     from PySide6.QtWidgets import QApplication
-    from src.interface import MainWindow
+    from PySide6.QtGui import QIcon
 
+    from src.interface import MainWindow
+    from src.paths import get_resource_path
+
+    # Create a single QApplication instance
     app = QApplication(sys.argv)
 
+    # Set application icon
+    icon_path = get_resource_path(
+        "assets", "icons", "koh.png"
+    )
+    app.setWindowIcon(QIcon(str(icon_path)))
+
+    # Create and display the main window
     window = MainWindow()
     window.show()
 

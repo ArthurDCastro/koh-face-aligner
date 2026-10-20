@@ -1,4 +1,3 @@
-
 from pathlib import Path
 
 import cv2
@@ -8,6 +7,7 @@ from src.centralizer import Centralizer
 from src.background import WhiteBackgroundRemover
 from src.segmentation import AIBackgroundRemover
 from src.resource_manager import ResourceManager
+from src.image_io import load_image, save_image
 
 
 class ImageProcessor:
@@ -82,8 +82,8 @@ class ImageProcessor:
                 # Validate image before loading
                 self.resources.validate_image(file)
 
-                # Load image
-                image = cv2.imread(str(file))
+                # Load image with Unicode path support
+                image = load_image(file)
 
                 if image is None:
                     raise ValueError("Unable to load image.")
@@ -118,8 +118,8 @@ class ImageProcessor:
                 # Save only the final image
                 output_path = output_dir / f"koh_{file.stem}{extension}"
 
-                if not cv2.imwrite(str(output_path), result):
-                    raise IOError("Failed to save output image.")
+                # Encode image before writing to disk
+                save_image(output_path, result)
 
                 results["success"] += 1
 
