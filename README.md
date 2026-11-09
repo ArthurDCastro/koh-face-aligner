@@ -65,6 +65,27 @@ Windows, Linux (Ubuntu), and macOS executables are built using GitHub Actions.
 
 > GitHub may require you to sign in to download workflow artifacts. Downloads appear only for runs that successfully uploaded the build artifacts.
 
+### Which macOS download should I choose?
+
+The two macOS packages are for **different Mac processor architectures**, not different macOS operating system versions. Choose based on the processor in your Mac:
+
+| Your Mac | Processor / chip | Download |
+| --- | --- | --- |
+| Intel-based Mac (typically older models) | Intel Core i5, i7, i9, Xeon, etc. (x86-64) | `KOH-macos-intel` |
+| Apple Silicon Mac | Apple M1, M2, M3, M4, M5, or another M-series chip (ARM64) | `KOH-macos-arm64` |
+
+**How to check your Mac:**
+
+1. Click the **Apple menu () → About This Mac**.
+2. Look for **Chip** or **Processor**:
+   - If it says **Apple M1**, **M2**, **M3**, **M4**, **M5**, etc., download **macOS Apple Silicon (ARM64)**.
+   - If it says **Intel**, download **macOS Intel (x64)**.
+3. Extract the downloaded ZIP and open `KOH.app`.
+
+**Important:** The Intel and Apple Silicon packages contain the same KOH application and features; they differ in the native binaries used by their processors. The ARM64 build is the recommended native version for Apple Silicon. Although some Intel applications can run on Apple Silicon through Rosetta 2, use the ARM64 package whenever available. An ARM64 app will not run natively on an Intel Mac.
+
+These downloads do not imply support for every macOS release: the minimum compatible macOS version depends on the bundled dependencies and has not yet been established through testing.
+
 ### macOS first launch
 
 The macOS packages are currently unsigned and not notarized. macOS Gatekeeper may warn that it cannot verify the developer. If you trust the build, open **System Settings → Privacy & Security** and select **Open Anyway** after attempting to launch `KOH.app`. Follow the on-screen confirmation. Do not disable Gatekeeper globally.
