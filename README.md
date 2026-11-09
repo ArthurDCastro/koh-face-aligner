@@ -24,7 +24,7 @@ The graphical interface supports batch processing of multiple files or entire fo
 - Batch image processing;
 - JPG and PNG export;
 - Background removal modes: `none`, `fast`, and `ai`;
-- Windows and Linux support.
+- Windows, Linux, and macOS (Intel and Apple Silicon) support.
 
 ## User tutorial
 
@@ -52,7 +52,7 @@ Also available in [Português 🇧🇷](docs/tutorials/koh-tutorial-pt-BR.md) an
 
 ## Download executables
 
-Windows and Linux (Ubuntu) executables are built using GitHub Actions.
+Windows, Linux (Ubuntu), and macOS executables are built using GitHub Actions.
 
 **[Download KOH builds (GitHub Actions)](https://github.com/ArthurDCastro/koh-face-aligner/actions/workflows/build.yml)**
 
@@ -60,8 +60,16 @@ Windows and Linux (Ubuntu) executables are built using GitHub Actions.
 2. Under **Artifacts**, download the package for your platform:
    - **Windows:** `KOH-windows-x64` — extract the ZIP and run `KOH.exe`.
    - **Ubuntu (Linux):** `KOH-linux-x64` — extract the archive and run `KOH/KOH`. If necessary, run `chmod +x KOH/KOH`.
+   - **macOS (Intel):** `KOH-macos-intel` — extract the ZIP and open `KOH.app`.
+   - **macOS (Apple Silicon / M-series):** `KOH-macos-arm64` — extract the ZIP and open `KOH.app`.
 
 > GitHub may require you to sign in to download workflow artifacts. Downloads appear only for runs that successfully uploaded the build artifacts.
+
+### macOS first launch
+
+The macOS packages are currently unsigned and not notarized. macOS Gatekeeper may warn that it cannot verify the developer. If you trust the build, open **System Settings → Privacy & Security** and select **Open Anyway** after attempting to launch `KOH.app`. Follow the on-screen confirmation. Do not disable Gatekeeper globally.
+
+Both macOS variants use native Python dependencies and are built independently on their matching GitHub Actions runner. A successful build does not replace a functional test on a real Mac.
 
 ## Installation
 
