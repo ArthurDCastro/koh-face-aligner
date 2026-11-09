@@ -53,6 +53,8 @@ def main():
         print("Building KOH for Linux...")
     elif sys.platform == "win32":
         print("Building KOH for Windows...")
+    elif sys.platform == "darwin":
+        print("Building KOH for macOS...")
     else:
         raise RuntimeError("Unsupported operating system.")
 
@@ -67,7 +69,15 @@ def main():
             str(ICON_DIR / "koh.png"),
         ])
 
-    # Run PyInstaller on both platforms
+    elif sys.platform == "darwin":
+        arguments.extend([
+            "--icon",
+            str(ICON_DIR / "koh.png"),
+            "--osx-bundle-identifier",
+            "com.arthurdcastro.koh",
+        ])
+
+    # Run PyInstaller for the current platform
     PyInstaller.__main__.run(arguments)
 
 
