@@ -21,15 +21,17 @@ jobs:
           - os: ubuntu-24.04
             platform: linux
             artifact: KOH-linux-x64
+            architecture: x64
 
           - os: windows-2022
             platform: windows
             artifact: KOH-windows-x64
+            architecture: x64
 
           - os: macos-15-intel
             platform: macos-intel
             artifact: KOH-macos-intel
-            architecture: ${{ matrix.architecture || 'x64' }}
+            architecture: x64
 
           - os: macos-15
             platform: macos-arm64
@@ -44,7 +46,7 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.13"
-          architecture: x64
+          architecture: ${{ matrix.architecture }}
           cache: pip
 
       - name: Install dependencies
