@@ -26,6 +26,16 @@ jobs:
             platform: windows
             artifact: KOH-windows-x64
 
+          - os: macos-15-intel
+            platform: macos-intel
+            artifact: KOH-macos-intel
+            architecture: ${{ matrix.architecture || 'x64' }}
+
+          - os: macos-15
+            platform: macos-arm64
+            artifact: KOH-macos-arm64
+            architecture: arm64
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -64,6 +74,20 @@ jobs:
             throw "KOH.exe not found"
           }
 
+      - name: Verify macOS app bundle
+        if: startsWith(matrix.platform, 'macos-')
+        shell: bash
+        run: |
+          test -d dist/KOH.app
+          test -f dist/KOH.app/Contents/MacOS/KOH
+          test -f dist/KOH.app/Contents/Info.plist
+
+      - name: Package macOS
+        if: startsWith(matrix.platform, 'macos-')
+        shell: bash
+        run: |
+          ditto -c -k --sequesterRsrc --keepParent dist/KOH.app "dist/${{ matrix.artifact }}.zip"
+
       - name: Package Linux
         if: matrix.platform == 'linux'
         shell: bash
@@ -93,4 +117,12 @@ jobs:
         with:
           name: KOH-windows-x64
           path: dist/KOH-windows-x64.zip
+          if-no-files-found: error
+
+      - name: Upload macOS artifact
+        if: startsWith(matrix.platform, 'macos-')
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: dist/${{ matrix.artifact }}.zip
           if-no-files-found: error
