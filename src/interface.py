@@ -5,6 +5,7 @@ from collections import Counter
 import logging
 import os
 import time
+import threading
 
 from PySide6.QtCore import QThread, QTimer, Signal, Qt
 from PySide6.QtGui import QIcon
@@ -33,6 +34,7 @@ from src.paths import get_resource_path
 from src.worker_manager import WorkerManager
 from src.preview import PreviewPanel
 from src.validation_worker import ValidationWorker
+from src.validation import MAX_PIXELS, WARNING_PIXELS
 from src.version import APP_NAME, APP_DESCRIPTION, VERSION, build_identity
 
 
@@ -76,6 +78,10 @@ class ProcessingWorker(QThread):
         self.files = files
         self.output_dir = output_dir
         self.settings = settings
+        self.cancel_event = threading.Event()
+
+    def cancel(self):
+        self.cancel_event.set()
 
     def run(self):
         try:
@@ -83,6 +89,7 @@ class ProcessingWorker(QThread):
                 max_memory_mb=4096,
                 max_time_seconds=120,
                 check_interval=0.2,
+                cancel_event=self.cancel_event,
             )
 
             results = manager.process_batch(
@@ -120,9 +127,11 @@ class MainWindow(QWidget):
         self.output_dir = None
         self.worker = None
         self.batch_active = False
+        self.cancel_requested = False
         self.validation_results = {}
         self.validation_tokens = {}
         self.validation_counts = Counter()
+        self.resolution_warning_count = 0
         self.file_items = {}
         self.folder_tokens = {}
         self.next_validation_token = 0
@@ -213,6 +222,12 @@ class MainWindow(QWidget):
         input_layout.addWidget(self.selection_status_label)
         self.validation_label = QLabel("Valid: 0 | Invalid: 0 | Checking: 0")
         input_layout.addWidget(self.validation_label)
+        self.resolution_warning_label = QLabel()
+        self.resolution_warning_label.setWordWrap(True)
+        self.resolution_warning_label.setTextFormat(Qt.TextFormat.PlainText)
+        self.resolution_warning_label.setStyleSheet("color: #946315;")
+        self.resolution_warning_label.hide()
+        input_layout.addWidget(self.resolution_warning_label)
 
         buttons_layout = QHBoxLayout()
 
@@ -333,6 +348,9 @@ class MainWindow(QWidget):
         self.process_button.clicked.connect(
             self.start_processing
         )
+        self.cancel_button = QPushButton("Cancel")
+        self.cancel_button.setEnabled(False)
+        self.cancel_button.clicked.connect(self.cancel_processing)
 
         self.status_label = QLabel("Ready")
         self.status_label.setStyleSheet("font-size: 12px; color: #333333;")
@@ -353,7 +371,10 @@ class MainWindow(QWidget):
         layout.addWidget(self.time_label)
         layout.addWidget(self.error_count_label)
         layout.addWidget(self.error_list)
-        layout.addWidget(self.process_button)
+        processing_buttons = QHBoxLayout()
+        processing_buttons.addWidget(self.process_button, 1)
+        processing_buttons.addWidget(self.cancel_button)
+        layout.addLayout(processing_buttons)
         layout.addWidget(self.status_label)
         layout.addWidget(self.footer_label)
 
@@ -382,6 +403,9 @@ class MainWindow(QWidget):
         )
 
     def preview_busy_changed(self, busy):
+        if not busy and self.cancel_requested and not self.batch_active:
+            self.status_label.setText("Preview cancelled")
+            self.cancel_requested = False
         self.update_validation_summary()
 
     def sync_preview_files(self):
@@ -450,21 +474,29 @@ class MainWindow(QWidget):
         previous = self.validation_results.get(file)
         if previous is not None:
             self.validation_counts[previous["valid"]] -= 1
+            if previous["valid"] is True and previous.get("warning"):
+                self.resolution_warning_count -= 1
         self.validation_results[file] = result
         self.validation_counts[result["valid"]] += 1
+        warning = result.get("warning") if result["valid"] is True else None
+        if warning:
+            self.resolution_warning_count += 1
         item = self.file_items.get(file)
         if item is not None:
             valid = result["valid"]
-            icon = (QStyle.StandardPixmap.SP_DialogApplyButton if valid is True else
+            icon = (QStyle.StandardPixmap.SP_MessageBoxWarning if warning else
+                    QStyle.StandardPixmap.SP_DialogApplyButton if valid is True else
                     QStyle.StandardPixmap.SP_MessageBoxWarning if valid is False else
                     QStyle.StandardPixmap.SP_BrowserReload)
             item.setIcon(self.style().standardIcon(icon))
-            item.setText(f"{Path(file).name} — {result['error']}" if valid is False else file)
+            item.setText(f"{Path(file).name} — {result['error']}" if valid is False else
+                         f"{file} — High resolution ({result['megapixels']:.2f} MP)" if warning else file)
             category = result.get("category") or ("checking" if valid is None else "valid")
             item.setToolTip(
                 f"{file}\n{'Valid image' if valid is True else result.get('error', '')}\n"
                 f"Category: {category}\n"
                 f"{result.get('details', '')}"
+                + (f"\n{warning}" if warning else "")
             )
         self.update_validation_summary()
         if hasattr(self, "preview") and self.preview.current_file == file:
@@ -476,16 +508,25 @@ class MainWindow(QWidget):
         self.set_validation_result(file, result)
         if result["valid"] is False:
             LOGGER.warning("Image validation failed: %s", result)
+        elif result.get("warning"):
+            LOGGER.warning("Image resolution warning: %s", result)
 
     def update_validation_summary(self):
         self.validation_label.setText(
             f"Valid: {self.validation_counts[True]} | Invalid: {self.validation_counts[False]} | Checking: {self.validation_counts[None]}"
             + (f" | Scanning folders: {len(self.folder_tokens)}" if self.folder_tokens else "")
         )
+        self.resolution_warning_label.setText(
+            f"High resolution: {self.resolution_warning_count} image(s) above {WARNING_PIXELS / 1_000_000:g} MP, "
+            f"up to {MAX_PIXELS / 1_000_000:g} MP. "
+            "Processing is allowed, but memory usage may be high."
+        )
+        self.resolution_warning_label.setVisible(self.resolution_warning_count > 0)
         self.remove_invalid_button.setEnabled(not self.batch_active and self.validation_counts[False] > 0)
         self.retry_validation_button.setEnabled(not self.batch_active and bool(self.files))
         if hasattr(self, "preview"):
             self.process_button.setEnabled(not self.batch_active and not self.preview.busy and self.validation_counts[True] > 0)
+            self.cancel_button.setEnabled((self.batch_active or self.preview.busy) and not self.cancel_requested)
 
     def retry_validation(self):
         if self.batch_active:
@@ -501,6 +542,8 @@ class MainWindow(QWidget):
         result = self.validation_results.pop(file, None)
         if result is not None:
             self.validation_counts[result["valid"]] -= 1
+            if result["valid"] is True and result.get("warning"):
+                self.resolution_warning_count -= 1
         self.file_items.pop(file, None)
 
     def remove_invalid_images(self):
@@ -607,6 +650,7 @@ class MainWindow(QWidget):
             return
 
         settings = self.processing_settings()
+        self.cancel_requested = False
         self.batch_active = True
         self.preview.begin_batch(files)
         self.update_validation_summary()
@@ -648,6 +692,19 @@ class MainWindow(QWidget):
         self.worker.failed.connect(self.processing_failed)
 
         self.worker.start()
+
+    def cancel_processing(self):
+        if self.cancel_requested:
+            return
+        if self.batch_active and self.worker is not None:
+            self.worker.cancel()
+        elif self.preview.busy:
+            self.preview.cancel()
+        else:
+            return
+        self.cancel_requested = True
+        self.cancel_button.setEnabled(False)
+        self.status_label.setText("Cancelling...")
 
     def image_finished(self, result):
         if not result["success"] and result.get("category") not in {None, "processing_error"}:
@@ -701,7 +758,7 @@ class MainWindow(QWidget):
         self.update_time()
 
         self.status_label.setText(
-            f"Processing {current}/{total}"
+            "Cancelling..." if self.cancel_requested else f"Processing {current}/{total}"
         )
 
     @staticmethod
@@ -740,7 +797,10 @@ class MainWindow(QWidget):
         )
 
     def processing_completed(self, results):
-        self.preview.end_batch()
+        cancelled = results.get("cancelled", False)
+        stopped_at = self.filename_label.toolTip() or "No image started"
+        completed = results.get("completed", self.completed_images)
+        self.preview.end_batch(cancelled=cancelled)
         self.stop_timing()
         self.reset_controls()
 
@@ -748,9 +808,15 @@ class MainWindow(QWidget):
         errors = len(results["errors"])
         self.update_progress_color(errors=errors, total=results["total"])
 
-        self.status_label.setText(
-            f"Completed: {success} successful, {errors} errors"
-        )
+        if cancelled:
+            self.status_label.setText(
+                f"Cancelled: {completed}/{results['total']} processed, "
+                f"{success} successful, {errors} errors"
+            )
+        else:
+            self.status_label.setText(
+                f"Completed: {success} successful, {errors} errors"
+            )
 
         message = (
             f"Total: {results['total']}\n"
@@ -758,18 +824,32 @@ class MainWindow(QWidget):
             f"Errors: {errors}\n"
             f"Duration: {self.format_duration(self.elapsed_seconds)}"
         )
+        if cancelled:
+            message = (
+                "Processing cancelled\n\n"
+                f"Processed: {completed} / {results['total']}\n"
+                f"Success: {success}\n"
+                f"Errors: {errors}\n"
+                f"Not completed: {results['total'] - completed}\n"
+                f"Stopped at: {Path(stopped_at).name}\n"
+                f"Duration: {self.format_duration(self.elapsed_seconds)}\n\n"
+                "Completed outputs have been saved."
+            )
 
-        if errors:
+        if errors or cancelled:
             details = "\n".join(
                 f"{item['file']}: {item['error']}"
                 for item in results["errors"]
             )
 
             dialog = QMessageBox(self)
-            dialog.setWindowTitle("Processing Results")
+            if cancelled:
+                details = f"Stopped at: {stopped_at}\nOutput directory: {self.output_dir}\n\n" + details
+
+            dialog.setWindowTitle("Processing Cancelled" if cancelled else "Processing Results")
             dialog.setText(message)
             dialog.setDetailedText(details)
-            dialog.setIcon(QMessageBox.Icon.Warning)
+            dialog.setIcon(QMessageBox.Icon.Warning if errors else QMessageBox.Icon.Information)
             dialog.exec()
         else:
             QMessageBox.information(
@@ -793,6 +873,8 @@ class MainWindow(QWidget):
 
     def reset_controls(self):
         self.batch_active = False
+        self.cancel_requested = False
+        self.cancel_button.setEnabled(False)
         self.process_button.setEnabled(not self.preview.busy)
         self.add_files_button.setEnabled(True)
         self.add_folder_button.setEnabled(True)

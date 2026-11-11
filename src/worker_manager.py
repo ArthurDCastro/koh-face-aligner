@@ -5,6 +5,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import threading
 from pathlib import Path
 
 import psutil
@@ -12,6 +13,10 @@ from src.paths import get_output_path
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
+
+
+class ProcessingCancelled(Exception):
+    """Processing was interrupted by the user, rather than failing."""
 
 
 class WorkerManager:
@@ -22,10 +27,16 @@ class WorkerManager:
         max_memory_mb=4096,
         max_time_seconds=120,
         check_interval=0.2,
+        cancel_event=None,
     ):
         self.max_memory_mb = max_memory_mb
         self.max_time_seconds = max_time_seconds
         self.check_interval = check_interval
+        self.cancel_event = cancel_event if cancel_event is not None else threading.Event()
+
+    @staticmethod
+    def cancelled_result(file):
+        return {"success": False, "cancelled": True, "file": str(file), "error": None}
 
     @staticmethod
     def get_memory_mb(process):
@@ -73,11 +84,13 @@ class WorkerManager:
     def process_image(self, file, output_dir, settings):
         """Process one image and return its result."""
         file = Path(file)
-        output_dir = Path(output_dir)
+        if self.cancel_event.is_set():
+            return self.cancelled_result(file)
+        output_dir = Path(output_dir).resolve()
         output_dir.mkdir(parents=True, exist_ok=True)
 
         with tempfile.TemporaryDirectory(
-            prefix="koh_worker_"
+            prefix=".koh_worker_", dir=output_dir,
         ) as temporary_dir:
             report_path = Path(temporary_dir) / "report.json"
             log_path = Path(temporary_dir) / "worker.log"
@@ -98,7 +111,7 @@ class WorkerManager:
 
             command.extend([
                 "--input", str(file.resolve()),
-                "--output", str(output_dir.resolve()),
+                "--output", str(Path(temporary_dir).resolve()),
                 "--report", str(report_path),
                 "--width", str(settings["width"]),
                 "--height", str(settings["height"]),
@@ -118,6 +131,7 @@ class WorkerManager:
             start = time.monotonic()
             peak_memory = 0.0
             failure = None
+            cancelled = False
 
             with log_path.open("w", encoding="utf-8") as log:
                 worker = subprocess.Popen(
@@ -131,6 +145,10 @@ class WorkerManager:
                 process = psutil.Process(worker.pid)
 
                 while worker.poll() is None:
+                    if self.cancel_event.is_set():
+                        cancelled = True
+                        self.stop_process(process)
+                        break
                     memory = self.get_memory_mb(process)
                     peak_memory = max(peak_memory, memory)
 
@@ -146,7 +164,7 @@ class WorkerManager:
                         self.stop_process(process)
                         break
 
-                    time.sleep(self.check_interval)
+                    self.cancel_event.wait(self.check_interval)
 
                 try:
                     worker.wait(timeout=3)
@@ -156,6 +174,9 @@ class WorkerManager:
                     worker.wait()
 
             elapsed = time.monotonic() - start
+
+            if cancelled:
+                return self.cancelled_result(file)
 
             if failure:
                 return {
@@ -183,6 +204,17 @@ class WorkerManager:
 
                     if worker.returncode != 0:
                         success = False
+
+                    if success:
+                        # Publish only complete outputs; cancellation cannot damage
+                        # an existing result or leave a partially written final file.
+                        staged = get_output_path(file, temporary_dir, settings["background_mode"])
+                        destination = get_output_path(file, output_dir, settings["background_mode"])
+                        try:
+                            staged.replace(destination)
+                        except OSError as error:
+                            success = False
+                            error_message = f"Unable to save processed image: {error}"
 
                     return {
                         "success": success,
@@ -232,9 +264,14 @@ class WorkerManager:
             "total": len(files),
             "success": 0,
             "errors": [],
+            "completed": 0,
+            "cancelled": False,
         }
 
         for index, file in enumerate(files, start=1):
+            if self.cancel_event.is_set():
+                results["cancelled"] = True
+                break
             error_count = len(results["errors"])
             if started_callback:
                 started_callback(str(file))
@@ -245,6 +282,10 @@ class WorkerManager:
                     output_dir,
                     settings,
                 )
+
+                if result.get("cancelled"):
+                    results["cancelled"] = True
+                    break
 
                 if result["success"]:
                     results["success"] += 1
@@ -263,6 +304,7 @@ class WorkerManager:
                     "error": str(error),
                 })
 
+            results["completed"] += 1
             if error_callback and len(results["errors"]) > error_count:
                 error_callback(results["errors"][-1])
 

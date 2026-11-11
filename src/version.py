@@ -6,7 +6,7 @@ import sys
 APP_NAME = "KOH"
 APP_DESCRIPTION = "Keypoint-Oriented Harmonization"
 BUNDLE_IDENTIFIER = "com.arthurdcastro.koh"
-VERSION = "0.2.0"
+VERSION = "0.2.1"
 
 
 def version_parts(version=VERSION):

@@ -1,9 +1,7 @@
 
-from pathlib import Path
-
 import cv2
 import psutil
-from src.validation import MAX_MEGAPIXELS, open_readable, ValidationError
+from src.validation import MAX_MEGAPIXELS, inspect_image
 
 
 class ResourceManager:
@@ -21,27 +19,7 @@ class ResourceManager:
 
     def validate_image(self, image_path):
         """Check image dimensions before decoding."""
-        image_path = Path(image_path)
-
-        # Read metadata to avoid loading large pixel arrays
-        from PIL import Image, UnidentifiedImageError
-
-        try:
-            with open_readable(image_path) as stream:
-                with Image.open(stream) as image:
-                    width, height = image.size
-        except UnidentifiedImageError as error:
-            raise ValidationError("invalid_image",
-                f"Invalid image: {image_path}"
-            ) from error
-
-        megapixels = width * height / 1_000_000
-
-        if megapixels > self.max_megapixels:
-            raise ValidationError("too_large",
-                f"Image exceeds {self.max_megapixels} MP "
-                f"({megapixels:.2f} MP)."
-            )
+        return inspect_image(image_path, self.max_megapixels)
 
     def validate_output(self, width, height):
         """Validate requested output resolution."""

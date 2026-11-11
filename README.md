@@ -137,7 +137,19 @@ During processing, elapsed time updates every second. Remaining time shows **Cal
 
 Images are checked automatically after **Add Images** or **Add Folder**. The input area shows **Valid**, **Invalid**, and **Checking** counts. Invalid rows show the filename and reason; hover over a row for its full path, error category, and technical details. Select files and click **Retry Validation** after fixing their access or contents. With no selection, retry checks all invalid files. **Remove Invalid** removes invalid entries from the list without deleting files.
 
-**Process Images** includes only files already marked valid when you start the batch. Invalid files and files still being checked remain in the list for a later batch; they do not block valid images. Individual previews are also enabled only after validation succeeds. Validation checks actual read access, nonempty regular files, image headers/integrity, and an OpenCV decode using the same decoder as processing. Supported content formats are JPEG, PNG, BMP, and WebP, subject to the 40 MP input limit. **All Files** in the file picker lets you select an image with an unusual extension; validation checks its contents. Folder import discovers the usual image extensions and iCloud placeholder names.
+**Process Images** includes only files already marked valid when you start the batch. Invalid files and files still being checked remain in the list for a later batch; they do not block valid images. Individual previews are also enabled only after validation succeeds. Validation checks actual read access, nonempty regular files, image headers/integrity, and an OpenCV decode using the same decoder as processing. Supported content formats are JPEG, PNG, BMP, and WebP. **All Files** in the file picker lets you select an image with an unusual extension; validation checks its contents. Folder import discovers the usual image extensions and iCloud placeholder names.
+
+Resolution is calculated as **width × height**, independently of compressed file size in MB. One MP is 1,000,000 pixels:
+
+| Resolution | Behavior |
+| --- | --- |
+| Up to and including 64 MP (64,000,000 pixels) | Normal validation and processing. |
+| Above 64 MP, up to and including 100 MP (100,000,000 pixels) | Processing allowed, with a high-memory-use warning. |
+| Above 100 MP | Image blocked individually; remaining valid images can proceed. |
+
+Dimensions are read lazily from the image header before the entire encoded file is read or its pixels are decoded. Images rejected by the resolution check therefore avoid a full decode. Allowed images still undergo the existing integrity and decoder checks. The processing worker rechecks the same resolution policy before loading pixels, including files changed after pre-validation.
+
+High-resolution warnings appear in one consolidated banner with a count, rather than separate pop-up dialogs. Warning images stay valid and can be processed; their rows and tooltips identify the resolution and memory warning. Blocked rows explain the dimensions, pixel count, and limit. Both warnings and blocking reasons are logged with the file path. Retrying or removing images updates the warning count. Resolution permission does not bypass the existing timeout and memory safeguards, so actual processing still depends on available resources.
 
 Locally accessible files in cloud folders work normally. Recognizable Windows offline/recall flags, macOS dataless flags, iCloud stubs, and cloud-provider errors show a download/available-offline instruction. Provider behavior varies; unidentified read failures and timeouts suggest checking storage or downloading locally rather than claiming the file is corrupt. After making a cloud file available offline, retry validation (or add the downloaded image if its placeholder name changed).
 

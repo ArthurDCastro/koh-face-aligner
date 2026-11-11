@@ -6,6 +6,8 @@ from types import SimpleNamespace
 import tempfile
 import threading
 import unittest
+import struct
+import zlib
 from unittest.mock import patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -17,9 +19,22 @@ from PySide6.QtWidgets import QApplication
 
 from src.image_io import load_image
 from src.interface import MainWindow
-from src.validation import check_metadata, error_record, validate_image, ValidationError
+from src.validation import check_metadata, check_resolution, error_record, inspect_image, validate_image, ValidationError
+from src.resource_manager import ResourceManager
 from src.validation_worker import ValidationSession
 from tests.test_preview import wait_for
+
+
+def write_png_header(path, width, height):
+    """Small fixture with real dimensions/CRCs, without allocating a large pixel array."""
+    def chunk(kind, data):
+        return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data))
+    path.write_bytes(
+        b"\x89PNG\r\n\x1a\n"
+        + chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0))
+        + chunk(b"IDAT", zlib.compress(b"\x00\x00\x00\x00"))
+        + chunk(b"IEND", b"")
+    )
 
 
 class ValidationTests(unittest.TestCase):
@@ -29,6 +44,58 @@ class ValidationTests(unittest.TestCase):
         self.root = Path(self.directory.name)
         self.valid = self.root / "portrait.png"
         Image.new("RGB", (32, 24), "purple").save(self.valid)
+
+    def test_resolution_thresholds_use_exact_pixel_counts(self):
+        for pixels, warning in ((63_999_999, False), (64_000_000, False),
+                                (64_000_001, True), (99_999_999, True), (100_000_000, True)):
+            with self.subTest(pixels=pixels):
+                result = check_resolution(1, pixels)
+                self.assertEqual(result["pixels"], pixels)
+                self.assertEqual(bool(result["warning"]), warning)
+        with self.assertRaises(ValidationError) as error:
+            check_resolution(1, 100_000_001)
+        self.assertEqual(error.exception.category, "too_large")
+        self.assertIn("100,000,001", str(error.exception))
+
+    def test_large_headers_are_checked_before_full_read_or_decode(self):
+        path = self.root / "oversized.png"
+        write_png_header(path, 10000, 10001)
+        self.assertLess(path.stat().st_size, 1024)
+        with patch("src.validation.read_image_bytes") as read, patch("cv2.imdecode") as decode:
+            with self.assertLogs("src.validation", level="WARNING") as logs:
+                result = validate_image(path)
+        self.assertFalse(result["valid"])
+        self.assertEqual(result["category"], "too_large")
+        self.assertIn("10000 x 10001", result["error"])
+        self.assertIn(str(path), logs.output[0])
+        read.assert_not_called()
+        decode.assert_not_called()
+        with self.assertRaises(ValidationError):
+            ResourceManager().validate_image(path)
+
+    def test_headers_at_limits_are_allowed_without_loading_pixels(self):
+        for width, height, warning in ((8000, 8000, False), (8000, 8001, True), (10000, 10000, True)):
+            with self.subTest(dimensions=(width, height)):
+                write_png_header(self.valid, width, height)
+                with patch("PIL.Image.Image.load", side_effect=AssertionError("Header inspection must not load pixels")):
+                    result = inspect_image(self.valid)
+                    processed = ResourceManager().validate_image(self.valid)
+                self.assertEqual(result["pixels"], width * height)
+                self.assertEqual(bool(result["warning"]), warning)
+                self.assertEqual(result, processed)
+
+    def test_allowed_large_image_remains_valid_with_warning_after_decode(self):
+        write_png_header(self.valid, 10000, 10000)
+        # Only the decoder result is stubbed: header parsing, CRC verification,
+        # file access, resolution classification and diagnostic logging are real.
+        with patch("cv2.imdecode", return_value=object()) as decode:
+            with self.assertLogs("src.validation", level="WARNING") as logs:
+                result = validate_image(self.valid)
+        self.assertTrue(result["valid"])
+        self.assertEqual(result["pixels"], 100_000_000)
+        self.assertIn("memory", result["warning"])
+        self.assertIn("Image resolution warning", logs.output[0])
+        decode.assert_called_once()
 
     def test_content_is_validated_instead_of_extension_and_decoded_once(self):
         renamed = self.root / "portrait.txt"
@@ -156,6 +223,47 @@ class ValidationGuiTests(unittest.TestCase):
 
     def wait_validation(self):
         wait_for(self.app, lambda: self.window.validation_counts[None] == 0)
+
+    def test_oversized_file_does_not_stop_other_inputs(self):
+        write_png_header(self.invalid, 10000, 10001)
+        self.window.append_files([str(self.invalid), str(self.valid)])
+        self.wait_validation()
+        self.assertEqual(self.window.validation_counts[True], 1)
+        self.assertEqual(self.window.validation_counts[False], 1)
+        self.assertEqual(self.window.validation_results[str(self.invalid)]["category"], "too_large")
+        self.assertIn("100 MP", self.window.file_list.item(0).text())
+        self.assertTrue(self.window.process_button.isEnabled())
+
+    def test_resolution_warnings_are_consolidated_and_do_not_block_batch(self):
+        second = self.root / "second.png"
+        second.write_bytes(self.valid.read_bytes())
+        files = [str(self.valid), str(second)]
+        with patch.object(self.window.validation_worker, "submit"):
+            self.window.append_files(files)
+        with patch("src.interface.QMessageBox.warning") as dialog:
+            for file in files:
+                result = {**validate_image(file), **check_resolution(9000, 10000)}
+                self.window.validation_finished(file, self.window.validation_tokens[file], result)
+            dialog.assert_not_called()
+        self.assertEqual(self.window.resolution_warning_count, 2)
+        self.assertFalse(self.window.resolution_warning_label.isHidden())
+        self.assertIn("2 image(s)", self.window.resolution_warning_label.text())
+        self.assertIn("memory usage", self.window.file_list.item(0).toolTip())
+        self.assertEqual(self.window.validation_counts[True], 2)
+        self.window.output_dir = self.directory.name
+        with patch("src.interface.ProcessingWorker") as worker:
+            self.window.start_processing()
+            self.assertEqual(worker.call_args.kwargs["files"], files)
+            self.window.worker = None
+        self.window.preview.end_batch()
+        self.window.reset_controls()
+        self.window.file_list.setCurrentRow(0)
+        with patch.object(self.window.validation_worker, "submit"):
+            self.window.retry_validation()
+        self.assertEqual(self.window.resolution_warning_count, 1)
+        self.window.clear_images()
+        self.assertEqual(self.window.resolution_warning_count, 0)
+        self.assertTrue(self.window.resolution_warning_label.isHidden())
 
     def test_counts_invalid_reasons_retry_removal_and_batch_filter(self):
         self.window.append_files([str(self.valid), str(self.invalid), str(self.valid)])

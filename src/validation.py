@@ -10,11 +10,14 @@ from pathlib import Path
 import stat
 import sys
 import time
+import warnings
 
 
 SUPPORTED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
 SUPPORTED_FORMATS = {"JPEG", "PNG", "BMP", "WEBP"}
-MAX_MEGAPIXELS = 40
+WARNING_PIXELS = 64_000_000
+MAX_PIXELS = 100_000_000
+MAX_MEGAPIXELS = MAX_PIXELS // 1_000_000
 LOGGER = logging.getLogger(__name__)
 OFFLINE_MESSAGE = "File is not available locally. Download it or make it available offline, then retry validation."
 
@@ -24,6 +27,59 @@ class ValidationError(ValueError):
         super().__init__(message)
         self.category = category
         self.details = details or message
+
+
+def check_resolution(width, height, max_megapixels=MAX_MEGAPIXELS):
+    """Classify dimensions using exact pixel counts, independent of encoded file size."""
+    pixels = width * height
+    limit = int(max_megapixels * 1_000_000)
+    if width <= 0 or height <= 0:
+        raise ValidationError("invalid_image", "Image dimensions must be positive.")
+    if pixels > limit:
+        raise ValidationError(
+            "too_large",
+            f"Image resolution {width} x {height} ({pixels:,} pixels) exceeds the {max_megapixels:g} MP limit ({limit:,} pixels).",
+        )
+    warning = None
+    if pixels > WARNING_PIXELS:
+        warning = (
+            f"High-resolution image: {width} x {height} ({pixels / 1_000_000:.2f} MP). "
+            "Processing is allowed, but memory usage may be high."
+        )
+    return {"width": width, "height": height, "pixels": pixels,
+            "megapixels": pixels / 1_000_000, "warning": warning}
+
+
+@contextmanager
+def checked_image(stream, max_megapixels=MAX_MEGAPIXELS):
+    """Apply our resolution policy to lazy Pillow headers without loading pixels."""
+    from PIL import Image, UnidentifiedImageError
+
+    try:
+        with warnings.catch_warnings():
+            # Pillow's warning threshold can fall inside our permitted range.
+            warnings.simplefilter("ignore", Image.DecompressionBombWarning)
+            with Image.open(stream) as image:
+                resolution = check_resolution(*image.size, max_megapixels)
+                yield image, resolution
+    except Image.DecompressionBombError as error:
+        # Pillow rejects extreme dimensions before returning the image object.
+        raise ValidationError("too_large", f"Image exceeds the {max_megapixels:g} MP resolution limit.", str(error)) from error
+    except UnidentifiedImageError as error:
+        raise ValidationError("invalid_image", "File is not a recognized image or its header is corrupted.", str(error)) from error
+    except (OSError, SyntaxError) as error:
+        if isinstance(error, OSError) and (error.errno is not None or getattr(error, "winerror", None) is not None):
+            raise
+        raise ValidationError("invalid_image", "Image is corrupted or has invalid image data.", str(error)) from error
+
+
+def inspect_image(file, max_megapixels=MAX_MEGAPIXELS):
+    """Reject oversized headers before reading the entire encoded image or decoding."""
+    with open_readable(file) as stream:
+        metadata = os.fstat(stream.fileno())
+        with checked_image(stream, max_megapixels) as (image, resolution):
+            return {**resolution, "format": image.format,
+                    "signature": [metadata.st_size, metadata.st_mtime_ns]}
 
 
 def error_record(file, error):
@@ -93,25 +149,24 @@ def read_image_bytes(file):
 
 def validate_image(file):
     """Verify headers/integrity and perform exactly one full OpenCV decode per attempt."""
-    from PIL import Image, UnidentifiedImageError
     import cv2
     import numpy as np
 
     try:
+        header = inspect_image(file)
+        if header["format"] not in SUPPORTED_FORMATS:
+            raise ValidationError("unsupported_format", f"Unsupported image format: {header['format']}.")
         data, metadata = read_image_bytes(file)
+        if header["signature"] != [metadata.st_size, metadata.st_mtime_ns]:
+            raise ValidationError("changed_file", "File changed while being checked. Wait for syncing to finish and retry.")
         try:
-            with Image.open(BytesIO(data)) as image:
+            with checked_image(BytesIO(data)) as (image, resolution):
                 format_name = image.format
-                width, height = image.size
                 if format_name not in SUPPORTED_FORMATS:
                     raise ValidationError("unsupported_format", f"Unsupported image format: {format_name}.")
-                if width * height > MAX_MEGAPIXELS * 1_000_000:
-                    raise ValidationError("too_large", f"Image exceeds the existing {MAX_MEGAPIXELS} MP input limit.")
                 image.verify()
                 if format_name == "JPEG" and data.rfind(b"\xff\xd9") < data.rfind(b"\xff\xda"):
                     raise ValidationError("invalid_image", "JPEG image is truncated. Restore or download the complete file.", "JPEG end-of-image marker missing after the final scan")
-        except UnidentifiedImageError as error:
-            raise ValidationError("invalid_image", "File is not a recognized image or its header is corrupted.", str(error)) from error
         except (OSError, SyntaxError, ValueError) as error:
             if isinstance(error, ValidationError):
                 raise
@@ -122,10 +177,13 @@ def validate_image(file):
             raise ValidationError("decode_failed", "Image data could not be decoded by the processing pipeline.", str(error)) from error
         if decoded is None:
             raise ValidationError("decode_failed", "Image data could not be decoded by the processing pipeline.")
-        return {"file": str(file), "path": str(file), "filename": Path(file).name,
+        result = {"file": str(file), "path": str(file), "filename": Path(file).name,
                 "valid": True, "category": None, "error": None, "details": "",
-                "format": format_name, "width": width, "height": height,
+                "format": format_name, **resolution,
                 "signature": [metadata.st_size, metadata.st_mtime_ns]}
+        if result["warning"]:
+            LOGGER.warning("Image resolution warning: %s", json.dumps(result, ensure_ascii=False))
+        return result
     except Exception as error:
         result = error_record(file, error)
         LOGGER.warning("Image validation failed: %s", json.dumps(result, ensure_ascii=False))

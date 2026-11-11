@@ -84,7 +84,7 @@ class PreviewTests(unittest.TestCase):
         started = threading.Event()
         received = []
 
-        def process(file, settings):
+        def process(file, settings, cancel_event=None):
             received.append((file, settings))
             started.set()
             release.wait(3)
@@ -165,7 +165,7 @@ class PreviewTests(unittest.TestCase):
         image = load_thumbnail(self.files[0])
         release = threading.Event()
 
-        def process(file, settings):
+        def process(file, settings, cancel_event=None):
             release.wait(3)
             return image
 

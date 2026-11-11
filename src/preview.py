@@ -2,6 +2,7 @@
 from collections import OrderedDict
 from pathlib import Path
 import tempfile
+import threading
 
 from PySide6.QtCore import QObject, QRunnable, QThreadPool, Qt, Signal, QSize
 from PySide6.QtGui import QColor, QImageReader, QPainter, QPixmap
@@ -10,7 +11,7 @@ from PySide6.QtWidgets import (
     QGraphicsView, QGraphicsScene, QGroupBox,
 )
 
-from src.worker_manager import WorkerManager
+from src.worker_manager import WorkerManager, ProcessingCancelled
 
 
 THUMBNAIL_SIZE = 1024
@@ -47,10 +48,12 @@ def load_thumbnail(path):
     return image
 
 
-def process_preview(file, settings):
+def process_preview(file, settings, cancel_event=None):
     # Keep model execution, timeouts and memory limits identical to a batch.
     with tempfile.TemporaryDirectory(prefix="koh_preview_") as directory:
-        result = WorkerManager().process_image(file, directory, settings)
+        result = WorkerManager(cancel_event=cancel_event).process_image(file, directory, settings)
+        if result.get("cancelled"):
+            raise ProcessingCancelled()
         if not result["success"]:
             raise ValueError(result["error"])
         return load_thumbnail(result["output"])
@@ -72,6 +75,9 @@ class PreviewTask(QRunnable):
         try:
             image = self.operation()
             error = None
+        except ProcessingCancelled as exception:
+            image = None
+            error = exception
         except Exception as exception:
             image = None
             error = str(exception)
@@ -143,6 +149,7 @@ class PreviewPanel(QGroupBox):
         self.wanted = {}
         self.messages = {}
         self.busy = False
+        self.cancel_event = threading.Event()
         self.batch_active = False
         self.validation_states = None
         self.load_pool = QThreadPool(self)
@@ -278,6 +285,9 @@ class PreviewPanel(QGroupBox):
     def task_finished(self, result):
         key, image, error = result
         self.jobs.pop(key, None)
+        if key[0] == "preview" and (self.cancel_event.is_set() or isinstance(error, ProcessingCancelled)):
+            image, error = None, None
+            self.messages["processed"] = "Preview cancelled"
         if image is not None:
             self.cache[key] = image
             self.cache.move_to_end(key)
@@ -362,11 +372,17 @@ class PreviewPanel(QGroupBox):
         self.processed.set_image(None)
         self.processed_status.setText("Generating preview...")
         if key not in self.cache:
+            self.cancel_event = threading.Event()
             self.busy = True
             self.busy_changed.emit(True)
             self.update_buttons()
         file, settings = self.current_file, self.get_settings().copy()
-        self.request(key, lambda: process_preview(file, settings), processing=True)
+        cancel_event = self.cancel_event
+        self.request(key, lambda: process_preview(file, settings, cancel_event), processing=True)
+
+    def cancel(self):
+        if self.busy:
+            self.cancel_event.set()
 
     def settings_changed(self):
         self.show_result()
@@ -388,11 +404,11 @@ class PreviewPanel(QGroupBox):
             if result["file"] == self.current_file:
                 self.show_result()
 
-    def end_batch(self):
+    def end_batch(self, cancelled=False):
         self.batch_active = False
         for file, result in list(self.results.items()):
             if result.get("pending"):
-                self.results[file] = {"success": False, "error": "No output — batch interrupted"}
+                self.results[file] = {"success": False, "error": "Not processed — batch cancelled" if cancelled else "No output — batch interrupted"}
         self.show_result()
         self.update_buttons()
 
