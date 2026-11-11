@@ -22,9 +22,11 @@ The graphical interface supports batch processing of multiple files or entire fo
 - Selection of the largest detected face;
 - Configurable face ratio and horizontal/vertical position;
 - Batch image processing;
+- Automatic input validation with valid/invalid counts, failure reasons, retry, and removal of invalid files;
 - Live batch progress with percentage, completed/total images, current filename, elapsed time, and estimated remaining time;
 - Live list and counter of images with errors, including the failure reason;
 - Progress bar keeps the theme's default color without errors, turns amber for partial failures, and raspberry red if every image fails or batch processing stops with an error;
+- Side-by-side original/result previews with navigation, zoom, fit, and checkerboard transparency;
 - JPG and PNG export;
 - Background removal modes: `none`, `fast`, and `ai`;
 - Windows, Linux, and macOS (Intel and Apple Silicon) support.
@@ -127,10 +129,30 @@ To remove specific images from the input list, select them (use Ctrl/Cmd or Shif
 
 During processing, elapsed time updates every second. Remaining time shows **Calculating...** until two images have completed, then uses the average duration of the last 10 images (including failed attempts). Estimates adjust as the current image runs and may vary with image complexity and processing mode. Successful and failed images both advance progress. Each new batch resets the counters and timer; the final duration remains visible when processing finishes or fails.
 
-Progress tracking tests run without processing images or loading models:
+### Input validation
+
+Images are checked automatically after **Add Images** or **Add Folder**. The input area shows **Valid**, **Invalid**, and **Checking** counts. Invalid rows show the filename and reason; hover over a row for its full path, error category, and technical details. Select files and click **Retry Validation** after fixing their access or contents. With no selection, retry checks all invalid files. **Remove Invalid** removes invalid entries from the list without deleting files.
+
+**Process Images** includes only files already marked valid when you start the batch. Invalid files and files still being checked remain in the list for a later batch; they do not block valid images. Individual previews are also enabled only after validation succeeds. Validation checks actual read access, nonempty regular files, image headers/integrity, and an OpenCV decode using the same decoder as processing. Supported content formats are JPEG, PNG, BMP, and WebP, subject to the existing 20 MP input limit. **All Files** in the file picker lets you select an image with an unusual extension; validation checks its contents. Folder import discovers the usual image extensions and iCloud placeholder names.
+
+Locally accessible files in cloud folders work normally. Recognizable Windows offline/recall flags, macOS dataless flags, iCloud stubs, and cloud-provider errors show a download/available-offline instruction. Provider behavior varies; unidentified read failures and timeouts suggest checking storage or downloading locally rather than claiming the file is corrupt. After making a cloud file available offline, retry validation (or add the downloaded image if its placeholder name changed).
+
+Folder discovery and validation run outside the GUI thread. A reusable isolated validator reads/decodes one image at a time, returns metadata instead of retaining full images, and applies a 15-second timeout and a 1 GB memory limit per request. Failed requests do not stop the remaining checks. Duplicate paths are not queued again, and replies for removed entries or older retry attempts are ignored. Diagnostic records include filename, path, category, message, and technical details in the validation state and application log. Processing still reopens and checks each input, so files that disappear or become unreadable after validation are reported through the existing batch error list.
+
+### Image preview and comparison
+
+Select an image in the input list or use **Previous** / **Next** in the preview panel. The original appears on the left and the processed result on the right. **+** / **−** zoom both views; drag to pan, or click **Fit** to restore the aspect-preserving fit. Transparent regions appear over a checkerboard.
+
+Click **Preview Image** to process only the displayed image with the current output dimensions, face ratio, position, and background removal mode. No output folder is required. This uses the same isolated worker and processing pipeline as the batch, writes to a temporary directory, then deletes the temporary output after loading its preview. It does not add failures to the batch error count; preview errors appear beside the processed view and can be retried.
+
+During a batch, keep browsing the input list to inspect results as each image finishes. Images that failed or have no output show an explanatory message. Saved batch results remain available afterward; if you change settings, the panel identifies the saved result as using earlier settings. Click **Preview Image** to check the new settings before running another batch.
+
+Image loading and individual processing run in the background. The GUI keeps a maximum of eight resized images (up to 1024 pixels per side), rather than all full-resolution inputs. Navigating uses existing outputs or cached previews; it does not trigger processing. Individual preview processing and batch processing run separately in time, so wait for an individual preview to finish before starting a batch or closing the app. Zoom enlarges the resized preview rather than loading the full-resolution image.
+
+GUI progress, preview, and validation tests run without loading models:
 
 ```bash
-QT_QPA_PLATFORM=offscreen python -m unittest tests.test_progress -v
+QT_QPA_PLATFORM=offscreen python -m unittest tests.test_progress tests.test_preview tests.test_validation -v
 ```
 
 ## Models and credits

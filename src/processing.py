@@ -8,6 +8,8 @@ from src.background import WhiteBackgroundRemover
 from src.segmentation import AIBackgroundRemover
 from src.resource_manager import ResourceManager
 from src.image_io import load_image, save_image
+from src.paths import get_output_path
+from src.validation import error_record
 
 
 class ImageProcessor:
@@ -111,12 +113,9 @@ class ImageProcessor:
                 # Apply optional background removal
                 if remover is not None:
                     result = remover.remove_background(result)
-                    extension = ".png"
-                else:
-                    extension = ".jpg"
 
                 # Save only the final image
-                output_path = output_dir / f"koh_{file.stem}{extension}"
+                output_path = get_output_path(file, output_dir, background_mode)
 
                 # Encode image before writing to disk
                 save_image(output_path, result)
@@ -125,10 +124,12 @@ class ImageProcessor:
 
 
             except Exception as error:
-                results["errors"].append({
-                    "file": str(file),
-                    "error": str(error),
-                })
+                record = error_record(file, error)
+                # Keep existing face/alignment/model error messages intact.
+                if record["category"] == "unexpected_error":
+                    record["error"] = str(error)
+                    record["category"] = "processing_error"
+                results["errors"].append(record)
 
             if callback:
                 callback(index, len(files))

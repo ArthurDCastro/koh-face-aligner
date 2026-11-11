@@ -3,17 +3,21 @@ from pathlib import Path
 
 import cv2
 import numpy as np
+from src.validation import read_image_bytes, ValidationError
 
 
 def load_image(path):
     """Load an image with Unicode path support."""
     path = Path(path)
 
-    data = np.fromfile(str(path), dtype=np.uint8)
-    image = cv2.imdecode(data, cv2.IMREAD_COLOR)
+    data, _ = read_image_bytes(path)
+    try:
+        image = cv2.imdecode(np.frombuffer(data, dtype=np.uint8), cv2.IMREAD_COLOR)
+    except cv2.error as error:
+        raise ValidationError("decode_failed", "Unable to decode image.", str(error)) from error
 
     if image is None:
-        raise ValueError(f"Unable to decode image: {path}")
+        raise ValidationError("decode_failed", "Unable to decode image.", str(path))
 
     return image
 

@@ -8,6 +8,7 @@ import time
 from pathlib import Path
 
 import psutil
+from src.paths import get_output_path
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -185,8 +186,14 @@ class WorkerManager:
 
                     return {
                         "success": success,
+                        "output": (
+                            str(get_output_path(file, output_dir, settings["background_mode"]))
+                            if success else None
+                        ),
                         "file": str(file),
                         "error": None if success else error_message,
+                        "category": errors[0].get("category") if errors and not success else None,
+                        "details": errors[0].get("details", "") if errors and not success else "",
                         "time": elapsed,
                         "peak_memory_mb": peak_memory,
                     }
@@ -218,6 +225,7 @@ class WorkerManager:
         callback=None,
         started_callback=None,
         error_callback=None,
+        result_callback=None,
     ):
         """Process a batch sequentially with resource monitoring."""
         results = {
@@ -244,9 +252,12 @@ class WorkerManager:
                     results["errors"].append({
                         "file": result["file"],
                         "error": result["error"],
+                        "category": result.get("category"),
+                        "details": result.get("details", ""),
                     })
 
             except Exception as error:
+                result = {"success": False, "file": str(file), "error": str(error)}
                 results["errors"].append({
                     "file": str(file),
                     "error": str(error),
@@ -254,6 +265,9 @@ class WorkerManager:
 
             if error_callback and len(results["errors"]) > error_count:
                 error_callback(results["errors"][-1])
+
+            if result_callback:
+                result_callback(result)
 
             if callback:
                 callback(index, len(files))

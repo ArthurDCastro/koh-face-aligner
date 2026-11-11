@@ -7,7 +7,11 @@ dist/
 .idea/
 .vscode/
 test_*
-tests/
+tests/*
+!tests/__init__.py
+!tests/test_progress.py
+!tests/test_preview.py
+!tests/test_validation.py
 result*
 
 models/rembg/

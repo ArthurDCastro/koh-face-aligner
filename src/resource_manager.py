@@ -3,6 +3,7 @@ from pathlib import Path
 
 import cv2
 import psutil
+from src.validation import open_readable, ValidationError
 
 
 class ResourceManager:
@@ -22,26 +23,22 @@ class ResourceManager:
         """Check image dimensions before decoding."""
         image_path = Path(image_path)
 
-        if not image_path.is_file():
-            raise FileNotFoundError(
-                f"Image not found: {image_path}"
-            )
-
         # Read metadata to avoid loading large pixel arrays
         from PIL import Image, UnidentifiedImageError
 
         try:
-            with Image.open(image_path) as image:
-                width, height = image.size
-        except (OSError, UnidentifiedImageError) as error:
-            raise ValueError(
+            with open_readable(image_path) as stream:
+                with Image.open(stream) as image:
+                    width, height = image.size
+        except UnidentifiedImageError as error:
+            raise ValidationError("invalid_image",
                 f"Invalid image: {image_path}"
             ) from error
 
         megapixels = width * height / 1_000_000
 
         if megapixels > self.max_megapixels:
-            raise ValueError(
+            raise ValidationError("too_large",
                 f"Image exceeds {self.max_megapixels} MP "
                 f"({megapixels:.2f} MP)."
             )

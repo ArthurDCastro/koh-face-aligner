@@ -1,6 +1,9 @@
 
 from pathlib import Path
 from collections import deque
+from collections import Counter
+import logging
+import os
 import time
 
 from PySide6.QtCore import QThread, QTimer, Signal, Qt
@@ -22,15 +25,17 @@ from PySide6.QtWidgets import (
     QFormLayout,
     QComboBox,
     QSlider,
+    QStyle,
+    QScrollArea,
 )
 
 from src.paths import get_resource_path
 from src.worker_manager import WorkerManager
+from src.preview import PreviewPanel
+from src.validation_worker import ValidationWorker
 
 
-SUPPORTED_EXTENSIONS = {
-    ".jpg", ".jpeg", ".png", ".bmp", ".webp"
-}
+LOGGER = logging.getLogger(__name__)
 
 def create_percentage_slider(default, minimum=0, maximum=100):
     container = QWidget()
@@ -60,6 +65,7 @@ class ProcessingWorker(QThread):
     progress = Signal(int, int, float)
     image_started = Signal(str)
     image_failed = Signal(dict)
+    image_finished = Signal(dict)
     completed = Signal(dict)
     failed = Signal(str)
 
@@ -85,6 +91,7 @@ class ProcessingWorker(QThread):
                 callback=self.report_progress,
                 started_callback=self.report_started,
                 error_callback=self.image_failed.emit,
+                result_callback=self.report_result,
             )
 
             self.completed.emit(results)
@@ -99,6 +106,9 @@ class ProcessingWorker(QThread):
         self.image_start = time.monotonic()
         self.image_started.emit(filename)
 
+    def report_result(self, result):
+        self.image_finished.emit({**result, "settings": self.settings.copy()})
+
 
 
 class MainWindow(QWidget):
@@ -108,6 +118,18 @@ class MainWindow(QWidget):
         self.files = []
         self.output_dir = None
         self.worker = None
+        self.batch_active = False
+        self.validation_results = {}
+        self.validation_tokens = {}
+        self.validation_counts = Counter()
+        self.file_items = {}
+        self.folder_tokens = {}
+        self.next_validation_token = 0
+        self.validation_worker = ValidationWorker(self)
+        self.validation_worker.validated.connect(self.validation_finished)
+        self.validation_worker.folder_loaded.connect(self.folder_loaded)
+        self.validation_worker.finished.connect(self.validation_stopped)
+        self.closing = False
         self.batch_start = None
         self.image_start = None
         self.completed_images = 0
@@ -119,7 +141,7 @@ class MainWindow(QWidget):
         self.progress_timer.timeout.connect(self.update_time)
 
         self.setWindowTitle("KOH - Face Alignment")
-        self.resize(650, 650)
+        self.resize(1200, 850)
 
         icon_path = get_resource_path("assets", "icons", "koh.png")
         self.setWindowIcon(QIcon(str(icon_path)))
@@ -127,7 +149,15 @@ class MainWindow(QWidget):
         self.setup_ui()
 
     def setup_ui(self):
-        layout = QVBoxLayout(self)
+        root = QHBoxLayout(self)
+        controls = QWidget()
+        layout = QVBoxLayout(controls)
+        layout.setContentsMargins(0, 0, 0, 0)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QScrollArea.Shape.NoFrame)
+        scroll.setWidget(controls)
+        root.addWidget(scroll, 1)
 
         # Header with app icon and branding
         header_layout = QHBoxLayout()
@@ -165,6 +195,7 @@ class MainWindow(QWidget):
         input_layout = QVBoxLayout()
 
         self.file_list = QListWidget()
+        self.file_list.setMaximumHeight(130)
         self.file_list.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self.file_list.itemSelectionChanged.connect(self.update_remove_button)
         self.file_list.setToolTip("Use Ctrl/Cmd or Shift to select multiple images to remove.")
@@ -175,6 +206,8 @@ class MainWindow(QWidget):
             "color: #444444; font-size: 11px; margin-top: 4px;"
         )
         input_layout.addWidget(self.selection_status_label)
+        self.validation_label = QLabel("Valid: 0 | Invalid: 0 | Checking: 0")
+        input_layout.addWidget(self.validation_label)
 
         buttons_layout = QHBoxLayout()
 
@@ -195,6 +228,15 @@ class MainWindow(QWidget):
         buttons_layout.addWidget(self.clear_button)
 
         input_layout.addLayout(buttons_layout)
+        validation_buttons = QHBoxLayout()
+        self.retry_validation_button = QPushButton("Retry Validation")
+        self.retry_validation_button.setToolTip("Recheck selected images, or all invalid images if none are selected.")
+        self.retry_validation_button.clicked.connect(self.retry_validation)
+        self.remove_invalid_button = QPushButton("Remove Invalid")
+        self.remove_invalid_button.clicked.connect(self.remove_invalid_images)
+        validation_buttons.addWidget(self.retry_validation_button)
+        validation_buttons.addWidget(self.remove_invalid_button)
+        input_layout.addLayout(validation_buttons)
         input_group.setLayout(input_layout)
 
         layout.addWidget(input_group)
@@ -310,12 +352,31 @@ class MainWindow(QWidget):
         layout.addWidget(self.status_label)
         layout.addWidget(self.footer_label)
 
+        self.preview = PreviewPanel(self.processing_settings, self)
+        self.preview.validation_states = self.validation_results
+        root.addWidget(self.preview, 1)
+        self.file_list.currentRowChanged.connect(self.preview.select)
+        self.preview.navigate.connect(self.file_list.setCurrentRow)
+        self.preview.busy_changed.connect(self.preview_busy_changed)
+        for control in (self.width_input, self.height_input, self.face_ratio_input,
+                        self.position_x_input, self.position_y_input):
+            control.valueChanged.connect(self.preview.settings_changed)
+        self.background_input.currentIndexChanged.connect(self.preview.settings_changed)
+        self.update_validation_summary()
+
+    def preview_busy_changed(self, busy):
+        self.update_validation_summary()
+
+    def sync_preview_files(self):
+        self.preview.set_files(self.files)
+        self.file_list.setCurrentRow(self.preview.index)
+
     def add_images(self):
         files, _ = QFileDialog.getOpenFileNames(
             self,
             "Select Images",
             "",
-            "Images (*.jpg *.jpeg *.png *.bmp *.webp)"
+            "Images (*.jpg *.jpeg *.png *.bmp *.webp);;All Files (*)"
         )
 
         self.append_files(files)
@@ -329,24 +390,106 @@ class MainWindow(QWidget):
         if not folder:
             return
 
-        files = [
-            str(file)
-            for file in sorted(Path(folder).iterdir())
-            if file.is_file()
-            and file.suffix.lower() in SUPPORTED_EXTENSIONS
-        ]
+        self.next_validation_token += 1
+        self.folder_tokens[folder] = self.next_validation_token
+        self.validation_worker.submit(folder, self.next_validation_token, "folder")
+        self.update_validation_summary()
 
-        self.append_files(files)
+    def folder_loaded(self, folder, token, result):
+        if self.folder_tokens.get(folder) != token:
+            return
+        self.folder_tokens.pop(folder, None)
+        if "files" in result:
+            self.append_files(result["files"])
+        else:
+            LOGGER.warning("Folder import failed: %s", result)
+            QMessageBox.warning(self, "Folder Import", f"{folder}\n{result['error']}\n{result['details']}")
+        self.update_validation_summary()
 
     def append_files(self, files):
+        known = set(self.files)
         for file in files:
-            file = str(Path(file).resolve())
+            # Do not stat/resolve cloud paths on the GUI thread.
+            file = os.path.abspath(os.path.expanduser(str(file)))
 
-            if file not in self.files:
+            if file not in known:
+                known.add(file)
                 self.files.append(file)
                 self.file_list.addItem(file)
+                self.file_items[file] = self.file_list.item(self.file_list.count() - 1)
+                self.schedule_validation(file)
 
         self.update_selection_status()
+        self.sync_preview_files()
+
+    def schedule_validation(self, file):
+        self.next_validation_token += 1
+        token = self.next_validation_token
+        self.validation_tokens[file] = token
+        self.set_validation_result(file, {"valid": None, "error": "Checking image..."})
+        self.validation_worker.submit(file, token)
+
+    def set_validation_result(self, file, result):
+        previous = self.validation_results.get(file)
+        if previous is not None:
+            self.validation_counts[previous["valid"]] -= 1
+        self.validation_results[file] = result
+        self.validation_counts[result["valid"]] += 1
+        item = self.file_items.get(file)
+        if item is not None:
+            valid = result["valid"]
+            icon = (QStyle.StandardPixmap.SP_DialogApplyButton if valid is True else
+                    QStyle.StandardPixmap.SP_MessageBoxWarning if valid is False else
+                    QStyle.StandardPixmap.SP_BrowserReload)
+            item.setIcon(self.style().standardIcon(icon))
+            item.setText(f"{Path(file).name} — {result['error']}" if valid is False else file)
+            category = result.get("category") or ("checking" if valid is None else "valid")
+            item.setToolTip(
+                f"{file}\n{'Valid image' if valid is True else result.get('error', '')}\n"
+                f"Category: {category}\n"
+                f"{result.get('details', '')}"
+            )
+        self.update_validation_summary()
+        if hasattr(self, "preview") and self.preview.current_file == file:
+            self.preview.select(self.preview.index)
+
+    def validation_finished(self, file, token, result):
+        if self.validation_tokens.get(file) != token:
+            return
+        self.set_validation_result(file, result)
+        if result["valid"] is False:
+            LOGGER.warning("Image validation failed: %s", result)
+
+    def update_validation_summary(self):
+        self.validation_label.setText(
+            f"Valid: {self.validation_counts[True]} | Invalid: {self.validation_counts[False]} | Checking: {self.validation_counts[None]}"
+            + (f" | Scanning folders: {len(self.folder_tokens)}" if self.folder_tokens else "")
+        )
+        self.remove_invalid_button.setEnabled(not self.batch_active and self.validation_counts[False] > 0)
+        self.retry_validation_button.setEnabled(not self.batch_active and bool(self.files))
+        if hasattr(self, "preview"):
+            self.process_button.setEnabled(not self.batch_active and not self.preview.busy and self.validation_counts[True] > 0)
+
+    def retry_validation(self):
+        if self.batch_active:
+            return
+        rows = [self.file_list.row(item) for item in self.file_list.selectedItems()]
+        files = [self.files[row] for row in rows] if rows else [file for file, result in self.validation_results.items() if result["valid"] is False]
+        for file in files:
+            self.schedule_validation(file)
+
+    def discard_validation(self, file):
+        self.validation_tokens.pop(file, None)
+        self.validation_worker.cancel(file)
+        result = self.validation_results.pop(file, None)
+        if result is not None:
+            self.validation_counts[result["valid"]] -= 1
+        self.file_items.pop(file, None)
+
+    def remove_invalid_images(self):
+        if not self.batch_active:
+            self.remove_image_rows([row for row, file in enumerate(self.files)
+                                    if self.validation_results.get(file, {}).get("valid") is False])
 
     def update_selection_status(self):
         if len(self.files) == 1:
@@ -360,17 +503,24 @@ class MainWindow(QWidget):
         self.selection_status_label.setText(selected_text)
 
     def clear_images(self):
+        for file in self.files:
+            self.discard_validation(file)
+        for folder in self.folder_tokens:
+            self.validation_worker.cancel(folder, "folder")
+        self.folder_tokens.clear()
         self.files.clear()
         self.file_list.clear()
         self.update_selection_status()
+        self.sync_preview_files()
+        self.update_validation_summary()
 
     def update_remove_button(self):
         self.remove_button.setEnabled(
-            self.file_list.isEnabled() and bool(self.file_list.selectedItems())
+            not self.batch_active and bool(self.file_list.selectedItems())
         )
 
     def remove_selected_images(self):
-        if not self.file_list.isEnabled():
+        if self.batch_active:
             return
         rows = sorted(
             (self.file_list.row(item) for item in self.file_list.selectedItems()),
@@ -378,11 +528,17 @@ class MainWindow(QWidget):
         )
         if not rows:
             return
-        for row in rows:
+        self.remove_image_rows(rows)
+
+    def remove_image_rows(self, rows):
+        for row in sorted(rows, reverse=True):
+            self.discard_validation(self.files[row])
             self.file_list.takeItem(row)
             self.files.pop(row)
         self.update_selection_status()
         self.update_remove_button()
+        self.sync_preview_files()
+        self.update_validation_summary()
 
     def reset_settings_to_defaults(self):
         self.width_input.setValue(400)
@@ -402,26 +558,8 @@ class MainWindow(QWidget):
             self.output_dir = folder
             self.output_label.setText(folder)
 
-    def start_processing(self):
-        if self.worker is not None and self.worker.isRunning():
-            return
-        if not self.files:
-            QMessageBox.warning(
-                self,
-                "Warning",
-                "Please select at least one image."
-            )
-            return
-
-        if not self.output_dir:
-            QMessageBox.warning(
-                self,
-                "Warning",
-                "Please select an output directory."
-            )
-            return
-
-        settings = {
+    def processing_settings(self):
+        return {
             "width": self.width_input.value(),
             "height": self.height_input.value(),
             "face_ratio": (
@@ -436,18 +574,37 @@ class MainWindow(QWidget):
             "background_mode": self.background_input.currentData(),
         }
 
+    def start_processing(self):
+        if self.preview.busy or (self.worker is not None and self.worker.isRunning()):
+            return
+        if not self.files:
+            QMessageBox.warning(self, "Warning", "Please select at least one image.")
+            return
+        if not self.output_dir:
+            QMessageBox.warning(self, "Warning", "Please select an output directory.")
+            return
+
+        files = [file for file in self.files if self.validation_results.get(file, {}).get("valid") is True]
+        if not files:
+            self.status_label.setText("No valid images available. Wait for validation or retry invalid files.")
+            return
+
+        settings = self.processing_settings()
+        self.batch_active = True
+        self.preview.begin_batch(files)
+        self.update_validation_summary()
+
         self.progress_bar.setValue(0)
         self.process_button.setEnabled(False)
         self.add_files_button.setEnabled(False)
         self.add_folder_button.setEnabled(False)
         self.clear_button.setEnabled(False)
-        self.file_list.setEnabled(False)
         self.remove_button.setEnabled(False)
         self.output_button.setEnabled(False)
 
         self.status_label.setText("Processing...")
         self.completed_images = 0
-        self.total_images = len(self.files)
+        self.total_images = len(files)
         self.image_durations.clear()
         self.error_list.clear()
         self.error_count_label.setText("Images with errors: 0")
@@ -461,7 +618,7 @@ class MainWindow(QWidget):
         self.progress_timer.start()
 
         self.worker = ProcessingWorker(
-            files=self.files.copy(),
+            files=files,
             output_dir=self.output_dir,
             settings=settings,
         )
@@ -469,15 +626,24 @@ class MainWindow(QWidget):
         self.worker.progress.connect(self.update_progress)
         self.worker.image_started.connect(self.update_filename)
         self.worker.image_failed.connect(self.add_image_error)
+        self.worker.image_finished.connect(self.image_finished)
         self.worker.completed.connect(self.processing_completed)
         self.worker.failed.connect(self.processing_failed)
 
         self.worker.start()
 
+    def image_finished(self, result):
+        if not result["success"] and result.get("category") not in {None, "processing_error"}:
+            file = result["file"]
+            if file in self.validation_results:
+                self.set_validation_result(file, {**result, "valid": False})
+        self.preview.record_result(result)
+
     def add_image_error(self, error):
         self.error_list.addItem(f"{Path(error['file']).name}: {error['error']}")
         self.error_list.item(self.error_list.count() - 1).setToolTip(
-            f"{error['file']}\n{error['error']}"
+            f"{error['file']}\n{error['error']}\n"
+            f"Category: {error.get('category') or 'processing_error'}\n{error.get('details', '')}"
         )
         self.error_count_label.setText(f"Images with errors: {self.error_list.count()}")
         self.error_list.scrollToBottom()
@@ -557,6 +723,7 @@ class MainWindow(QWidget):
         )
 
     def processing_completed(self, results):
+        self.preview.end_batch()
         self.stop_timing()
         self.reset_controls()
 
@@ -595,6 +762,7 @@ class MainWindow(QWidget):
             )
 
     def processing_failed(self, error):
+        self.preview.end_batch()
         self.update_progress_color(failed=True)
         self.stop_timing(failed=True)
         self.reset_controls()
@@ -607,10 +775,30 @@ class MainWindow(QWidget):
         )
 
     def reset_controls(self):
-        self.process_button.setEnabled(True)
+        self.batch_active = False
+        self.process_button.setEnabled(not self.preview.busy)
         self.add_files_button.setEnabled(True)
         self.add_folder_button.setEnabled(True)
         self.clear_button.setEnabled(True)
         self.file_list.setEnabled(True)
         self.update_remove_button()
         self.output_button.setEnabled(True)
+        self.update_validation_summary()
+
+    def validation_stopped(self):
+        if self.closing:
+            self.close()
+
+    def closeEvent(self, event):
+        if self.preview.busy or (self.worker is not None and self.worker.isRunning()):
+            self.status_label.setText("Please wait for processing to finish before closing.")
+            event.ignore()
+            return
+        if self.validation_worker.isRunning():
+            self.closing = True
+            self.setEnabled(False)
+            self.validation_worker.requestInterruption()
+            self.status_label.setText("Stopping image validation...")
+            event.ignore()
+            return
+        super().closeEvent(event)

@@ -11,3 +11,8 @@ def get_resource_path(*parts):
         base_path = Path(__file__).resolve().parent.parent
 
     return base_path.joinpath(*parts)
+
+
+def get_output_path(file, output_dir, background_mode):
+    extension = ".jpg" if background_mode == "none" else ".png"
+    return Path(output_dir) / f"koh_{Path(file).stem}{extension}"

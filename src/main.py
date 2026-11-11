@@ -3,6 +3,11 @@ import sys
 
 
 def main():
+    if "--koh-validator" in sys.argv:
+        sys.argv.remove("--koh-validator")
+        from src.validation import main as validation_main
+        return validation_main()
+
     # Internal worker mode
     if "--koh-worker" in sys.argv:
         sys.argv.remove("--koh-worker")
