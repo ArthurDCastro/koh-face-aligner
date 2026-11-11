@@ -1,8 +1,13 @@
 
 import sys
+from src.version import APP_NAME, VERSION
 
 
 def main():
+    if "--version" in sys.argv[1:] or "-V" in sys.argv[1:]:
+        print(f"{APP_NAME} {VERSION}")
+        return 0
+
     if "--koh-validator" in sys.argv:
         sys.argv.remove("--koh-validator")
         from src.validation import main as validation_main
@@ -25,6 +30,10 @@ def main():
 
     # Create a single QApplication instance
     app = QApplication(sys.argv)
+    app.setApplicationName(APP_NAME)
+    app.setApplicationDisplayName(APP_NAME)
+    app.setApplicationVersion(VERSION)
+    app.setOrganizationName("Arthur Castro")
 
     # Set application icon
     icon_path = get_resource_path(

@@ -33,6 +33,7 @@ from src.paths import get_resource_path
 from src.worker_manager import WorkerManager
 from src.preview import PreviewPanel
 from src.validation_worker import ValidationWorker
+from src.version import APP_NAME, APP_DESCRIPTION, VERSION, build_identity
 
 
 LOGGER = logging.getLogger(__name__)
@@ -140,7 +141,7 @@ class MainWindow(QWidget):
         self.progress_timer.setInterval(1000)
         self.progress_timer.timeout.connect(self.update_time)
 
-        self.setWindowTitle("KOH - Face Alignment")
+        self.setWindowTitle(f"{APP_NAME} - Face Alignment")
         self.resize(1200, 850)
 
         icon_path = get_resource_path("assets", "icons", "koh.png")
@@ -174,16 +175,20 @@ class MainWindow(QWidget):
         title_layout.setSpacing(2)
         title_layout.setAlignment(Qt.AlignmentFlag.AlignLeft)
 
-        title = QLabel("KOH")
+        title = QLabel(APP_NAME)
         title.setStyleSheet("font-size: 28px; font-weight: bold;")
 
-        subtitle = QLabel("Keypoint-Oriented Harmonization")
+        subtitle = QLabel(APP_DESCRIPTION)
 
         title_layout.addWidget(title)
         title_layout.addWidget(subtitle)
 
         header_layout.addWidget(icon_label)
         header_layout.addLayout(title_layout)
+        header_layout.addStretch()
+        self.about_button = QPushButton(f"About {APP_NAME}")
+        self.about_button.clicked.connect(self.show_about)
+        header_layout.addWidget(self.about_button)
         layout.addLayout(header_layout)
 
         # Input images
@@ -363,6 +368,18 @@ class MainWindow(QWidget):
             control.valueChanged.connect(self.preview.settings_changed)
         self.background_input.currentIndexChanged.connect(self.preview.settings_changed)
         self.update_validation_summary()
+
+    def show_about(self):
+        try:
+            identity = build_identity()
+            target = f"{identity['platform']}-{identity['architecture']}"
+        except ValueError:
+            target = "Source build"
+        QMessageBox.about(
+            self, f"About {APP_NAME}",
+            f"<h3>{APP_NAME} {VERSION}</h3><p>{APP_DESCRIPTION}</p>"
+            f"<p>Build target: {target}</p><p>Author: Arthur Castro</p>"
+        )
 
     def preview_busy_changed(self, busy):
         self.update_validation_summary()

@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   build:
-    name: Build ${{ matrix.platform }}
+    name: Build ${{ matrix.platform }}-${{ matrix.architecture }}
     runs-on: ${{ matrix.os }}
 
     strategy:
@@ -20,22 +20,15 @@ jobs:
         include:
           - os: ubuntu-24.04
             platform: linux
-            artifact: KOH-linux-x64
             architecture: x64
-
           - os: windows-2022
             platform: windows
-            artifact: KOH-windows-x64
             architecture: x64
-
           - os: macos-15-intel
-            platform: macos-intel
-            artifact: KOH-macos-intel
+            platform: macos
             architecture: x64
-
           - os: macos-15
-            platform: macos-arm64
-            artifact: KOH-macos-arm64
+            platform: macos
             architecture: arm64
 
     steps:
@@ -49,6 +42,15 @@ jobs:
           architecture: ${{ matrix.architecture }}
           cache: pip
 
+      - name: Resolve version and validate tag and target
+        id: metadata
+        shell: bash
+        run: >-
+          python scripts/build.py --metadata
+          --github-output "$GITHUB_OUTPUT"
+          --expected-platform "${{ matrix.platform }}"
+          --expected-architecture "${{ matrix.architecture }}"
+
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
@@ -60,71 +62,26 @@ jobs:
           test -f models/face_detection_yunet_2023mar.onnx
           test -f models/modnet/modnet_photographic.onnx
 
-      - name: Build application
-        run: python scripts/build.py
+      - name: Build, verify version, and package application
+        run: python scripts/build.py --package
 
-      - name: Verify Linux executable
-        if: matrix.platform == 'linux'
-        shell: bash
-        run: test -f dist/KOH/KOH
-
-      - name: Verify Windows executable
+      - name: Verify Windows version properties
         if: matrix.platform == 'windows'
         shell: pwsh
+        env:
+          KOH_ARTIFACT: ${{ steps.metadata.outputs.artifact }}
+          KOH_VERSION: ${{ steps.metadata.outputs.version }}
         run: |
-          if (!(Test-Path "dist/KOH.exe")) {
-            throw "KOH.exe not found"
+          $info = (Get-Item "dist/$env:KOH_ARTIFACT.exe").VersionInfo
+          if ($info.ProductName -ne "KOH" -or
+              $info.FileVersion -ne $env:KOH_VERSION -or
+              $info.ProductVersion -ne $env:KOH_VERSION) {
+            throw "Executable version properties do not match the application version"
           }
 
-      - name: Verify macOS app bundle
-        if: startsWith(matrix.platform, 'macos-')
-        shell: bash
-        run: |
-          test -d dist/KOH.app
-          test -f dist/KOH.app/Contents/MacOS/KOH
-          test -f dist/KOH.app/Contents/Info.plist
-
-      - name: Package macOS
-        if: startsWith(matrix.platform, 'macos-')
-        shell: bash
-        run: |
-          ditto -c -k --sequesterRsrc --keepParent dist/KOH.app "dist/${{ matrix.artifact }}.zip"
-
-      - name: Package Linux
-        if: matrix.platform == 'linux'
-        shell: bash
-        run: |
-          cd dist
-          tar -czf KOH-linux-x64.tar.gz KOH
-
-      - name: Package Windows
-        if: matrix.platform == 'windows'
-        shell: pwsh
-        run: |
-          Compress-Archive `
-            -Path dist/KOH.exe `
-            -DestinationPath dist/KOH-windows-x64.zip
-
-      - name: Upload Linux artifact
-        if: matrix.platform == 'linux'
+      - name: Upload versioned artifact
         uses: actions/upload-artifact@v4
         with:
-          name: KOH-linux-x64
-          path: dist/KOH-linux-x64.tar.gz
-          if-no-files-found: error
-
-      - name: Upload Windows artifact
-        if: matrix.platform == 'windows'
-        uses: actions/upload-artifact@v4
-        with:
-          name: KOH-windows-x64
-          path: dist/KOH-windows-x64.zip
-          if-no-files-found: error
-
-      - name: Upload macOS artifact
-        if: startsWith(matrix.platform, 'macos-')
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ matrix.artifact }}
-          path: dist/${{ matrix.artifact }}.zip
+          name: ${{ steps.metadata.outputs.artifact }}
+          path: ${{ steps.metadata.outputs.archive }}
           if-no-files-found: error

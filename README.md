@@ -63,10 +63,12 @@ Windows, Linux (Ubuntu), and macOS executables are built using GitHub Actions.
 
 1. Open the link and select the most recent successful **Build KOH** workflow run.
 2. Under **Artifacts**, download the package for your platform:
-   - **Windows:** `KOH-windows-x64` — extract the ZIP and run `KOH.exe`.
-   - **Ubuntu (Linux):** `KOH-linux-x64` — extract the archive and run `KOH/KOH`. If necessary, run `chmod +x KOH/KOH`.
-   - **macOS (Intel):** `KOH-macos-intel` — extract the ZIP and open `KOH.app`.
-   - **macOS (Apple Silicon / M-series):** `KOH-macos-arm64` — extract the ZIP and open `KOH.app`.
+   - **Windows:** `KOH-v<version>-windows-x64` — extract the ZIP and run `KOH-v<version>-windows-x64.exe`.
+   - **Ubuntu (Linux):** `KOH-v<version>-linux-x64` — extract the tar.gz archive and run `KOH-v<version>-linux-x64/KOH-v<version>-linux-x64`. If necessary, make that executable runnable with `chmod +x`.
+   - **macOS (Intel):** `KOH-v<version>-macos-x64` — extract the ZIP and open `KOH-v<version>-macos-x64.app`.
+   - **macOS (Apple Silicon / M-series):** `KOH-v<version>-macos-arm64` — extract the ZIP and open `KOH-v<version>-macos-arm64.app`.
+
+`<version>` is the application version shown in the artifact name. GitHub may wrap the package in an additional ZIP; extract that wrapper first, then extract the contained application package.
 
 > GitHub may require you to sign in to download workflow artifacts. Downloads appear only for runs that successfully uploaded the build artifacts.
 
@@ -76,8 +78,8 @@ The two macOS packages are for **different Mac processor architectures**, not di
 
 | Your Mac | Processor / chip | Download |
 | --- | --- | --- |
-| Intel-based Mac (typically older models) | Intel Core i5, i7, i9, Xeon, etc. (x86-64) | `KOH-macos-intel` |
-| Apple Silicon Mac | Apple M1, M2, M3, M4, M5, or another M-series chip (ARM64) | `KOH-macos-arm64` |
+| Intel-based Mac (typically older models) | Intel Core i5, i7, i9, Xeon, etc. (x86-64) | `KOH-v<version>-macos-x64` |
+| Apple Silicon Mac | Apple M1, M2, M3, M4, M5, or another M-series chip (ARM64) | `KOH-v<version>-macos-arm64` |
 
 **How to check your Mac:**
 
@@ -85,7 +87,7 @@ The two macOS packages are for **different Mac processor architectures**, not di
 2. Look for **Chip** or **Processor**:
    - If it says **Apple M1**, **M2**, **M3**, **M4**, **M5**, etc., download **macOS Apple Silicon (ARM64)**.
    - If it says **Intel**, download **macOS Intel (x64)**.
-3. Extract the downloaded ZIP and open `KOH.app`.
+3. Extract the downloaded ZIP and open the versioned KOH `.app` bundle.
 
 **Important:** The Intel and Apple Silicon packages contain the same KOH application and features; they differ in the native binaries used by their processors. The ARM64 build is the recommended native version for Apple Silicon. Although some Intel applications can run on Apple Silicon through Rosetta 2, use the ARM64 package whenever available. An ARM64 app will not run natively on an Intel Mac.
 
@@ -93,7 +95,7 @@ These downloads do not imply support for every macOS release: the minimum compat
 
 ### macOS first launch
 
-The macOS packages are currently unsigned and not notarized. macOS Gatekeeper may warn that it cannot verify the developer. If you trust the build, open **System Settings → Privacy & Security** and select **Open Anyway** after attempting to launch `KOH.app`. Follow the on-screen confirmation. Do not disable Gatekeeper globally.
+The macOS packages are currently unsigned and not notarized. macOS Gatekeeper may warn that it cannot verify the developer. If you trust the build, open **System Settings → Privacy & Security** and select **Open Anyway** after attempting to launch the KOH `.app` bundle. Follow the on-screen confirmation. Do not disable Gatekeeper globally.
 
 Both macOS variants use native Python dependencies and are built independently on their matching GitHub Actions runner. A successful build does not replace a functional test on a real Mac.
 
@@ -125,6 +127,8 @@ python -m src.main
 
 The interface lets you select images, choose an output folder, configure output dimensions and face positioning, select the background removal mode, and start batch processing.
 
+Click **About KOH** to see the version and build target. From source, `python -m src.main --version` or `python -m src.main -V` prints the version without loading the GUI or models. The packaged executable supports the same flags; on macOS, invoke the executable inside the app's `Contents/MacOS/` directory.
+
 To remove specific images from the input list, select them (use Ctrl/Cmd or Shift for multiple images) and click **Remove Selected**. **Clear** removes the entire list. These actions only change the input list; files on disk are preserved.
 
 During processing, elapsed time updates every second. Remaining time shows **Calculating...** until two images have completed, then uses the average duration of the last 10 images (including failed attempts). Estimates adjust as the current image runs and may vary with image complexity and processing mode. Successful and failed images both advance progress. Each new batch resets the counters and timer; the final duration remains visible when processing finishes or fails.
@@ -152,8 +156,36 @@ Image loading and individual processing run in the background. The GUI keeps a m
 GUI progress, preview, and validation tests run without loading models:
 
 ```bash
-QT_QPA_PLATFORM=offscreen python -m unittest tests.test_progress tests.test_preview tests.test_validation -v
+QT_QPA_PLATFORM=offscreen python -m unittest tests.test_progress tests.test_preview tests.test_validation tests.test_version -v
 ```
+
+## Versioning, builds, and releases
+
+[`src/version.py`](src/version.py) is the single source of truth. Change only its `VERSION` constant to update the application version; the GUI, CLI, Qt metadata, Windows properties, macOS bundle metadata, and artifact names all derive from it. The package also exposes this value as `src.__version__`.
+
+Versions use SemVer's `MAJOR.MINOR.PATCH` format, with no leading zeros or prerelease/build suffixes. KOH is currently pre-1.0: increment PATCH for compatible fixes and MINOR for features or changes to the evolving interface. Reserve a MAJOR bump for an established compatibility boundary; at and after 1.0, breaking changes increment MAJOR, compatible features MINOR, and fixes PATCH. See the [SemVer specification](https://semver.org/).
+
+Build on the target operating system and architecture after installing the project dependencies:
+
+```bash
+python scripts/build.py --metadata
+python scripts/build.py --package
+```
+
+The build script reads the portable [`scripts/koh.spec`](scripts/koh.spec), verifies the generated executable's `--version` output, and packages it under `dist/`. Windows produces a versioned `.exe` and `.zip`, Linux a versioned directory and `.tar.gz`, and macOS a versioned `.app` and `.zip`. A bundled `build-info.json` identifies the version and target. Windows Product Name stays KOH; Product/File Version strings use the SemVer value and numeric version fields append a zero as the fourth component. macOS keeps the stable `com.arthurdcastro.koh` bundle identifier and KOH display name, with both native version fields set before signing. Windows double-click launches hide the console while command-line launches retain version output.
+
+After updating `VERSION`, running tests, and committing the release changes, create a matching annotated tag from that commit:
+
+```bash
+tag="$(python -c 'from src.version import VERSION; print("v" + VERSION)')"
+git tag -a "$tag" -m "KOH $tag"
+git push origin HEAD
+git push origin "$tag"
+```
+
+The existing **Build KOH** workflow runs for `v*` tags and manual dispatch. It rejects any tag that differs from `v` plus the source version, verifies the native target against the job matrix, checks executable versions, and uploads artifacts named with version, platform, and architecture. Manual branch builds use the source version. There is no separate workflow version to update.
+
+To publish a release, wait for all four platform builds for the tag to succeed. Download and extract the Actions artifact wrappers, then create a GitHub Release using that exact existing tag. Add release notes and attach the generated Windows/macOS ZIPs and Linux tar.gz archive. Review the assets before publishing. The build workflow does not publish releases automatically. For fixes after publication, bump the version and create a new tag rather than moving an existing release tag.
 
 ## Models and credits
 

@@ -4,6 +4,7 @@ __pycache__/
 build/
 dist/
 *.spec
+!scripts/koh.spec
 .idea/
 .vscode/
 test_*
@@ -12,6 +13,7 @@ tests/*
 !tests/test_progress.py
 !tests/test_preview.py
 !tests/test_validation.py
+!tests/test_version.py
 result*
 
 models/rembg/
