@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
     QProgressBar,
     QMessageBox,
     QListWidget,
+    QAbstractItemView,
     QGroupBox,
     QFormLayout,
     QComboBox,
@@ -164,6 +165,9 @@ class MainWindow(QWidget):
         input_layout = QVBoxLayout()
 
         self.file_list = QListWidget()
+        self.file_list.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
+        self.file_list.itemSelectionChanged.connect(self.update_remove_button)
+        self.file_list.setToolTip("Use Ctrl/Cmd or Shift to select multiple images to remove.")
         input_layout.addWidget(self.file_list)
 
         self.selection_status_label = QLabel("Nenhuma imagem selecionada")
@@ -177,13 +181,17 @@ class MainWindow(QWidget):
         self.add_files_button = QPushButton("Add Images")
         self.add_folder_button = QPushButton("Add Folder")
         self.clear_button = QPushButton("Clear")
+        self.remove_button = QPushButton("Remove Selected")
+        self.remove_button.setEnabled(False)
 
         self.add_files_button.clicked.connect(self.add_images)
         self.add_folder_button.clicked.connect(self.add_folder)
         self.clear_button.clicked.connect(self.clear_images)
+        self.remove_button.clicked.connect(self.remove_selected_images)
 
         buttons_layout.addWidget(self.add_files_button)
         buttons_layout.addWidget(self.add_folder_button)
+        buttons_layout.addWidget(self.remove_button)
         buttons_layout.addWidget(self.clear_button)
 
         input_layout.addLayout(buttons_layout)
@@ -338,6 +346,9 @@ class MainWindow(QWidget):
                 self.files.append(file)
                 self.file_list.addItem(file)
 
+        self.update_selection_status()
+
+    def update_selection_status(self):
         if len(self.files) == 1:
             selected_text = "1 imagem selecionada"
         elif len(self.files) == 0:
@@ -351,8 +362,27 @@ class MainWindow(QWidget):
     def clear_images(self):
         self.files.clear()
         self.file_list.clear()
-        self.status_label.setText("Nenhuma imagem selecionada")
-        self.selection_status_label.setText("Nenhuma imagem selecionada")
+        self.update_selection_status()
+
+    def update_remove_button(self):
+        self.remove_button.setEnabled(
+            self.file_list.isEnabled() and bool(self.file_list.selectedItems())
+        )
+
+    def remove_selected_images(self):
+        if not self.file_list.isEnabled():
+            return
+        rows = sorted(
+            (self.file_list.row(item) for item in self.file_list.selectedItems()),
+            reverse=True,
+        )
+        if not rows:
+            return
+        for row in rows:
+            self.file_list.takeItem(row)
+            self.files.pop(row)
+        self.update_selection_status()
+        self.update_remove_button()
 
     def reset_settings_to_defaults(self):
         self.width_input.setValue(400)
@@ -411,6 +441,8 @@ class MainWindow(QWidget):
         self.add_files_button.setEnabled(False)
         self.add_folder_button.setEnabled(False)
         self.clear_button.setEnabled(False)
+        self.file_list.setEnabled(False)
+        self.remove_button.setEnabled(False)
         self.output_button.setEnabled(False)
 
         self.status_label.setText("Processing...")
@@ -579,4 +611,6 @@ class MainWindow(QWidget):
         self.add_files_button.setEnabled(True)
         self.add_folder_button.setEnabled(True)
         self.clear_button.setEnabled(True)
+        self.file_list.setEnabled(True)
+        self.update_remove_button()
         self.output_button.setEnabled(True)

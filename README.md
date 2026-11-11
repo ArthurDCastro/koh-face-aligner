@@ -123,6 +123,8 @@ python -m src.main
 
 The interface lets you select images, choose an output folder, configure output dimensions and face positioning, select the background removal mode, and start batch processing.
 
+To remove specific images from the input list, select them (use Ctrl/Cmd or Shift for multiple images) and click **Remove Selected**. **Clear** removes the entire list. These actions only change the input list; files on disk are preserved.
+
 During processing, elapsed time updates every second. Remaining time shows **Calculating...** until two images have completed, then uses the average duration of the last 10 images (including failed attempts). Estimates adjust as the current image runs and may vary with image complexity and processing mode. Successful and failed images both advance progress. Each new batch resets the counters and timer; the final duration remains visible when processing finishes or fails.
 
 Progress tracking tests run without processing images or loading models:
