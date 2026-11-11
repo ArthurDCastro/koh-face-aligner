@@ -216,6 +216,8 @@ class WorkerManager:
         output_dir,
         settings,
         callback=None,
+        started_callback=None,
+        error_callback=None,
     ):
         """Process a batch sequentially with resource monitoring."""
         results = {
@@ -225,6 +227,10 @@ class WorkerManager:
         }
 
         for index, file in enumerate(files, start=1):
+            error_count = len(results["errors"])
+            if started_callback:
+                started_callback(str(file))
+
             try:
                 result = self.process_image(
                     file,
@@ -245,6 +251,9 @@ class WorkerManager:
                     "file": str(file),
                     "error": str(error),
                 })
+
+            if error_callback and len(results["errors"]) > error_count:
+                error_callback(results["errors"][-1])
 
             if callback:
                 callback(index, len(files))

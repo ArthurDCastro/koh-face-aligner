@@ -1,7 +1,9 @@
 
 from pathlib import Path
+from collections import deque
+import time
 
-from PySide6.QtCore import QThread, Signal, Qt
+from PySide6.QtCore import QThread, QTimer, Signal, Qt
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import (
     QWidget,
@@ -54,7 +56,9 @@ def create_percentage_slider(default, minimum=0, maximum=100):
 
 
 class ProcessingWorker(QThread):
-    progress = Signal(int, int)
+    progress = Signal(int, int, float)
+    image_started = Signal(str)
+    image_failed = Signal(dict)
     completed = Signal(dict)
     failed = Signal(str)
 
@@ -78,6 +82,8 @@ class ProcessingWorker(QThread):
                 output_dir=self.output_dir,
                 settings=self.settings,
                 callback=self.report_progress,
+                started_callback=self.report_started,
+                error_callback=self.image_failed.emit,
             )
 
             self.completed.emit(results)
@@ -86,7 +92,11 @@ class ProcessingWorker(QThread):
             self.failed.emit(str(error))
 
     def report_progress(self, current, total):
-        self.progress.emit(current, total)
+        self.progress.emit(current, total, time.monotonic() - self.image_start)
+
+    def report_started(self, filename):
+        self.image_start = time.monotonic()
+        self.image_started.emit(filename)
 
 
 
@@ -97,6 +107,15 @@ class MainWindow(QWidget):
         self.files = []
         self.output_dir = None
         self.worker = None
+        self.batch_start = None
+        self.image_start = None
+        self.completed_images = 0
+        self.total_images = 0
+        self.image_durations = deque(maxlen=10)
+        self.elapsed_seconds = 0.0
+        self.progress_timer = QTimer(self)
+        self.progress_timer.setInterval(1000)
+        self.progress_timer.timeout.connect(self.update_time)
 
         self.setWindowTitle("KOH - Face Alignment")
         self.resize(650, 650)
@@ -244,6 +263,16 @@ class MainWindow(QWidget):
         # Processing
         self.progress_bar = QProgressBar()
         self.progress_bar.setValue(0)
+        self.progress_bar.setFormat("%p%")
+        self.count_label = QLabel("Processed: 0 / 0")
+        self.filename_label = QLabel("Current image: —")
+        self.filename_label.setTextFormat(Qt.TextFormat.PlainText)
+        self.filename_label.setWordWrap(True)
+        self.time_label = QLabel("Elapsed: 00:00:00 | Remaining: Calculating...")
+        self.error_count_label = QLabel("Images with errors: 0")
+        self.error_list = QListWidget()
+        self.error_list.setMaximumHeight(110)
+        self.error_list.setWordWrap(True)
 
         self.process_button = QPushButton("Process Images")
         self.process_button.clicked.connect(
@@ -264,6 +293,11 @@ class MainWindow(QWidget):
         )
 
         layout.addWidget(self.progress_bar)
+        layout.addWidget(self.count_label)
+        layout.addWidget(self.filename_label)
+        layout.addWidget(self.time_label)
+        layout.addWidget(self.error_count_label)
+        layout.addWidget(self.error_list)
         layout.addWidget(self.process_button)
         layout.addWidget(self.status_label)
         layout.addWidget(self.footer_label)
@@ -339,6 +373,8 @@ class MainWindow(QWidget):
             self.output_label.setText(folder)
 
     def start_processing(self):
+        if self.worker is not None and self.worker.isRunning():
+            return
         if not self.files:
             QMessageBox.warning(
                 self,
@@ -378,6 +414,19 @@ class MainWindow(QWidget):
         self.output_button.setEnabled(False)
 
         self.status_label.setText("Processing...")
+        self.completed_images = 0
+        self.total_images = len(self.files)
+        self.image_durations.clear()
+        self.error_list.clear()
+        self.error_count_label.setText("Images with errors: 0")
+        self.update_progress_color()
+        self.batch_start = time.monotonic()
+        self.image_start = None
+        self.elapsed_seconds = 0.0
+        self.count_label.setText(f"Processed: 0 / {self.total_images}")
+        self.filename_label.setText("Current image: —")
+        self.update_time()
+        self.progress_timer.start()
 
         self.worker = ProcessingWorker(
             files=self.files.copy(),
@@ -386,24 +435,102 @@ class MainWindow(QWidget):
         )
 
         self.worker.progress.connect(self.update_progress)
+        self.worker.image_started.connect(self.update_filename)
+        self.worker.image_failed.connect(self.add_image_error)
         self.worker.completed.connect(self.processing_completed)
         self.worker.failed.connect(self.processing_failed)
 
         self.worker.start()
 
-    def update_progress(self, current, total):
+    def add_image_error(self, error):
+        self.error_list.addItem(f"{Path(error['file']).name}: {error['error']}")
+        self.error_list.item(self.error_list.count() - 1).setToolTip(
+            f"{error['file']}\n{error['error']}"
+        )
+        self.error_count_label.setText(f"Images with errors: {self.error_list.count()}")
+        self.error_list.scrollToBottom()
+        self.update_progress_color()
+
+    def update_progress_color(self, errors=None, total=None, failed=False):
+        errors = self.error_list.count() if errors is None else errors
+        total = self.total_images if total is None else total
+        if failed or (total > 0 and errors == total):
+            color = "#C96379"  # Muted raspberry red complements purple.
+            description = "Processing failed" if failed else "All images failed"
+        elif errors:
+            color = "#D6A34A"  # Warm amber for partial failures.
+            description = "Some images failed"
+        else:
+            self.progress_bar.setStyleSheet("")
+            self.progress_bar.setToolTip("")
+            return
+        self.progress_bar.setStyleSheet(
+            "QProgressBar { border: 1px solid palette(mid); border-radius: 4px;"
+            " background: palette(base); color: palette(text); text-align: center; }"
+            f"QProgressBar::chunk {{ background-color: {color}; border-radius: 3px; }}"
+        )
+        self.progress_bar.setToolTip(description)
+
+    def update_filename(self, filename):
+        self.image_start = time.monotonic()
+        self.filename_label.setText(f"Current image: {Path(filename).name}")
+        self.filename_label.setToolTip(filename)
+
+    def update_progress(self, current, total, duration):
+        self.completed_images = current
+        self.image_durations.append(duration)
+        self.image_start = None
         percentage = int(current / total * 100)
         self.progress_bar.setValue(percentage)
+        self.count_label.setText(f"Processed: {current} / {total}")
+        self.update_time()
 
         self.status_label.setText(
             f"Processing {current}/{total}"
         )
 
+    @staticmethod
+    def format_duration(seconds):
+        seconds = max(0, int(seconds))
+        hours, remainder = divmod(seconds, 3600)
+        minutes, seconds = divmod(remainder, 60)
+        return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+
+    def update_time(self):
+        if self.batch_start is None:
+            return
+        now = time.monotonic()
+        self.elapsed_seconds = now - self.batch_start
+        remaining = "Calculating..."
+        if self.completed_images == self.total_images:
+            remaining = self.format_duration(0)
+        elif len(self.image_durations) >= 2:
+            average = sum(self.image_durations) / len(self.image_durations)
+            current_elapsed = now - self.image_start if self.image_start is not None else 0
+            estimate = average * (self.total_images - self.completed_images - 1)
+            estimate += max(0, average - current_elapsed)
+            remaining = self.format_duration(estimate)
+        self.time_label.setText(
+            f"Elapsed: {self.format_duration(self.elapsed_seconds)} | Remaining: {remaining}"
+        )
+
+    def stop_timing(self, failed=False):
+        self.progress_timer.stop()
+        self.update_time()
+        self.filename_label.setText("Current image: —")
+        self.filename_label.setToolTip("")
+        self.time_label.setText(
+            f"Duration: {self.format_duration(self.elapsed_seconds)}"
+            + (" | Processing failed" if failed else "")
+        )
+
     def processing_completed(self, results):
+        self.stop_timing()
         self.reset_controls()
 
         success = results["success"]
         errors = len(results["errors"])
+        self.update_progress_color(errors=errors, total=results["total"])
 
         self.status_label.setText(
             f"Completed: {success} successful, {errors} errors"
@@ -412,7 +539,8 @@ class MainWindow(QWidget):
         message = (
             f"Total: {results['total']}\n"
             f"Success: {success}\n"
-            f"Errors: {errors}"
+            f"Errors: {errors}\n"
+            f"Duration: {self.format_duration(self.elapsed_seconds)}"
         )
 
         if errors:
@@ -435,6 +563,8 @@ class MainWindow(QWidget):
             )
 
     def processing_failed(self, error):
+        self.update_progress_color(failed=True)
+        self.stop_timing(failed=True)
         self.reset_controls()
         self.status_label.setText("Processing failed")
 

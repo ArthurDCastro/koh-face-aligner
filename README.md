@@ -22,6 +22,9 @@ The graphical interface supports batch processing of multiple files or entire fo
 - Selection of the largest detected face;
 - Configurable face ratio and horizontal/vertical position;
 - Batch image processing;
+- Live batch progress with percentage, completed/total images, current filename, elapsed time, and estimated remaining time;
+- Live list and counter of images with errors, including the failure reason;
+- Progress bar keeps the theme's default color without errors, turns amber for partial failures, and raspberry red if every image fails or batch processing stops with an error;
 - JPG and PNG export;
 - Background removal modes: `none`, `fast`, and `ai`;
 - Windows, Linux, and macOS (Intel and Apple Silicon) support.
@@ -119,6 +122,14 @@ python -m src.main
 ```
 
 The interface lets you select images, choose an output folder, configure output dimensions and face positioning, select the background removal mode, and start batch processing.
+
+During processing, elapsed time updates every second. Remaining time shows **Calculating...** until two images have completed, then uses the average duration of the last 10 images (including failed attempts). Estimates adjust as the current image runs and may vary with image complexity and processing mode. Successful and failed images both advance progress. Each new batch resets the counters and timer; the final duration remains visible when processing finishes or fails.
+
+Progress tracking tests run without processing images or loading models:
+
+```bash
+QT_QPA_PLATFORM=offscreen python -m unittest tests.test_progress -v
+```
 
 ## Models and credits
 
