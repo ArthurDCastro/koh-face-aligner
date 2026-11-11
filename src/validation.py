@@ -14,7 +14,7 @@ import time
 
 SUPPORTED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
 SUPPORTED_FORMATS = {"JPEG", "PNG", "BMP", "WEBP"}
-MAX_MEGAPIXELS = 20
+MAX_MEGAPIXELS = 40
 LOGGER = logging.getLogger(__name__)
 OFFLINE_MESSAGE = "File is not available locally. Download it or make it available offline, then retry validation."
 

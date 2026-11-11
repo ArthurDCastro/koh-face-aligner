@@ -18,7 +18,6 @@ class ImageProcessor:
         self.centralizer = Centralizer()
         self.resources = ResourceManager(
             max_memory_mb=2048,
-            max_megapixels=20,
         )
 
     def process(

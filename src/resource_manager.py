@@ -3,7 +3,7 @@ from pathlib import Path
 
 import cv2
 import psutil
-from src.validation import open_readable, ValidationError
+from src.validation import MAX_MEGAPIXELS, open_readable, ValidationError
 
 
 class ResourceManager:
@@ -12,7 +12,7 @@ class ResourceManager:
     def __init__(
         self,
         max_memory_mb=2048,
-        max_megapixels=20,
+        max_megapixels=MAX_MEGAPIXELS,
         max_output_dimension=4096,
     ):
         self.max_memory_mb = max_memory_mb
