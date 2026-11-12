@@ -57,6 +57,8 @@ Also available in [Português 🇧🇷](docs/tutorials/koh-tutorial-pt-BR.md) an
 
 ## Download executables
 
+**[Download KOH executables (Google Drive)](https://drive.google.com/drive/u/1/folders/1mmTCpYMsK9Vc6HKeYWLLNWnAGUrTKHKl)**
+
 Windows, Linux (Ubuntu), and macOS executables are built using GitHub Actions.
 
 **[Download KOH builds (GitHub Actions)](https://github.com/ArthurDCastro/koh-face-aligner/actions/workflows/build.yml)**
